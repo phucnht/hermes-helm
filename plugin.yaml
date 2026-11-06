@@ -30,5 +30,5 @@ config_schema:
     default: {daily_usd: 0, warn_pct: 80, prices: {}}
     description: >-
       daily_usd is the daily spend limit (0 = none); warn_pct posts a warning once a day at that
-      share of the limit; prices maps model to [usd per 1M input, usd per 1M output] for models
-      Hermes cannot price.
+      share of the limit; prices maps model to [usd per 1M input, usd per 1M output] and wins
+      over Hermes pricing (use it to cap a ChatGPT/Codex subscription, which Hermes prices at $0).

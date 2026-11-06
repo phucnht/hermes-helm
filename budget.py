@@ -17,7 +17,12 @@ def _today(days_ago: int = 0) -> str:
 
 
 def _price(model: str, usage: dict, provider=None, prices=None) -> float | None:
-    """USD for one call: Hermes pricing, else the budget.prices table, else None (unknown)."""
+    """USD for one call: the budget.prices table (your override wins, so a ChatGPT/Codex
+    subscription that Hermes prices at $0 can still be capped), else Hermes pricing, else None."""
+    rate = (prices or {}).get(model)
+    if rate:
+        inp = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+        return (inp * float(rate[0]) + (usage.get("output_tokens") or 0) * float(rate[1])) / 1e6
     try:
         from agent.usage_pricing import CanonicalUsage, estimate_usage_cost
         buckets = ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens")
@@ -27,10 +32,6 @@ def _price(model: str, usage: dict, provider=None, prices=None) -> float | None:
             return float(cost)
     except Exception:
         pass
-    rate = (prices or {}).get(model)
-    if rate:
-        inp = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
-        return (inp * float(rate[0]) + (usage.get("output_tokens") or 0) * float(rate[1])) / 1e6
     return None
 
 

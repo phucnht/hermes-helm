@@ -80,3 +80,9 @@ def test_price_falls_back_to_table():
     usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
     assert budget._price("no-such-model-xyz", usage, "custom", {"no-such-model-xyz": [1, 2]}) == 3.0
     assert budget._price("no-such-model-xyz", usage, "custom") is None
+
+
+def test_price_table_overrides_hermes():
+    # openai-codex is subscription-included, so Hermes prices it at $0; the table must still apply
+    usage = {"input_tokens": 1_000_000, "output_tokens": 0}
+    assert budget._price("gpt-5.4", usage, "openai-codex", {"gpt-5.4": [2, 8]}) == 2.0

@@ -53,7 +53,7 @@ In Discord, turn on Developer Mode, then right-click your name and choose Copy U
 
 **resume** saves the text of each turn when the turn starts and marks it done when the turn ends. If the gateway is killed, restarted or loses power in between, the turn stays open, and the next process lists it under `/pending`. Turns you stop yourself with `/stop` are not listed. Replay resends the text only, not attachments. Without `allow_gateway_injection`, replay shows the text so you can paste it back.
 
-**budget** prices every model call (main and auxiliary) with Hermes' own price table, falling back to `budget.prices` for models Hermes doesn't know. At `warn_pct` of the limit it posts one warning a day. At the limit it blocks new turns and stops tool calls in the turn that is running. The spend total is global and resets at local midnight.
+**budget** prices every model call (main and auxiliary) with your `budget.prices` table first, then Hermes' own price table. Hermes counts calls through a ChatGPT/Codex subscription as $0, so on a subscription add a rate there (for example `gpt-5.4: [2, 8]`, USD per 1M input and output tokens) if you want a cap. At `warn_pct` of the limit it posts one warning a day. At the limit it blocks new turns and stops tool calls in the turn that is running. The spend total is global and resets at local midnight.
 
 ## What it writes and stores
 
