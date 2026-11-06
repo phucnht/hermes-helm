@@ -116,6 +116,8 @@ def _summary(kind: str, changes: dict[str, bool]) -> str:
 
 def switch(kind: str, names: list[str], on: bool) -> str:
     known = {n for n, _, _ in items(kind)}
+    if on and kind != "mcp":  # a name switched off where it isn't listed (another platform) can still come back
+        known |= _disabled(core.read_config(), kind)
     if names == ["all"]:
         names = sorted(known)
     if unknown := [n for n in names if n not in known]:

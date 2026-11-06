@@ -74,6 +74,9 @@ def test_text_switch_many_and_all(run, ctx):
     assert ctx.config["skills"]["disabled"] == ["ocr", "pdf", "web"]  # hermes-agent stays on
     assert "essential" in run("skills hermes-agent off")
     assert run("mcp jira on").startswith("On: `jira`")
+    ctx.config["agent"] = {"disabled_toolsets": ["kanban"]}  # off, but not listed on this platform
+    assert run("toolsets all on").startswith("On: `browser`, `kanban`")
+    assert ctx.config["agent"]["disabled_toolsets"] == []
     assert run("toolsets nope off") == "No Toolsets named `nope`."
     assert run("toolsets browser maybe") == "/helm toolsets <name ...|all> on|off"
 
