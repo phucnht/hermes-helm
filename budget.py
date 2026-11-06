@@ -99,7 +99,10 @@ def setup(ctx):
                 usd = -1.0
             return set_limit(usd) if math.isfinite(usd) and usd >= 0 else "/helm budget <usd> | off"
         choices = [{"value": str(p), "label": f"${p}"} for p in PRESETS if p != limit()]
-        picked = ctx.ask_choice(summary(), choices + ([{"value": "0", "label": "No limit"}] if limit() else []))
+        picked = ctx.ask_choice(summary(), choices + ([{"value": "0", "label": "No limit"}] if limit() else [])
+                                + [core.CANCEL])
+        if picked == "*cancel":
+            return None
         return summary() if picked is None else set_limit(float(picked))
 
     return {"budget": view}

@@ -46,7 +46,9 @@ def register(ctx):
         if name:
             return USAGE
         menu = [{"value": v, "label": label} for v, label in MENU.items() if core.module_on(ctx, views[v][0])]
-        picked = ctx.ask_choice("hermes-helm", menu)
+        picked = ctx.ask_choice("hermes-helm", menu + [core.CANCEL])
+        if picked == "*cancel":
+            return None
         return USAGE if picked is None else run(picked, "", source)
 
     ctx.register_command("helm", helm, description="Skills, MCP servers, lost turns and spend",

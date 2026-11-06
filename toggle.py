@@ -31,10 +31,10 @@ def _toolset_tokens() -> dict[str, int]:
             for ts in registry.get_registered_toolset_names()}
 
 
-def _skill_tokens() -> dict[str, int]:
-    """{skill: tokens of its index line in the system prompt}. SKILL.md itself loads only when used."""
+def _skills() -> dict[str, tuple[int, str]]:
+    """{skill: (tokens of its index line in the system prompt, category)}. SKILL.md loads only when used."""
     from tools.skills_tool import find_all_skills
-    return {s["name"]: _tokens(f"- {s['name']}: {s.get('description') or ''}\n")
+    return {s["name"]: (_tokens(f"- {s['name']}: {s.get('description') or ''}\n"), s.get("category") or "other")
             for s in find_all_skills(skip_disabled=True)}
 
 
@@ -53,7 +53,7 @@ def _disabled(cfg: dict, kind: str) -> set[str]:
     return {str(v).strip() for v in items if str(v).strip()}
 
 
-def items(kind: str) -> list[tuple[str, int, bool]]:
+def items(kind: str, category: str | None = None) -> list[tuple[str, int, bool]]:
     """(name, tokens, on), most tokens first. An MCP server that is off or not connected counts 0."""
     cfg = core.read_config()
     if kind == "mcp":
@@ -62,50 +62,111 @@ def items(kind: str) -> list[tuple[str, int, bool]]:
                 for name, c in (cfg.get("mcp_servers") or {}).items()]
     elif kind == "skills":
         off = _disabled(cfg, kind)
-        rows = [(n, t, n not in off) for n, t in _skill_tokens().items()]
+        rows = [(n, t, n not in off) for n, (t, cat) in _skills().items() if category in (None, cat)]
     else:
         off = _disabled(cfg, kind)
         rows = [(n, t, n not in off) for n, t in _toolset_tokens().items() if not n.startswith("mcp-")]
     return sorted(rows, key=lambda r: (-r[1], r[0]))
 
 
-def switch(kind: str, name: str, on: bool) -> str:
-    known = {n for n, _, _ in items(kind)}
-    if name not in known:
-        return f"No {KINDS[kind]} named `{name}`."
+def _write(kind: str, names: list[str], on: bool) -> str | None:
+    """Switch every name in one go; an error string, or None."""
     if kind == "mcp":
-        err = core.set_config(("mcp_servers", name, "enabled"), on)
-    else:
-        if kind == "skills" and not on and name in _essential():
-            return f"`{name}` is essential to Hermes and stays on."
-        off = _disabled(core.read_config(), kind)
-        err = core.set_config(".".join(LIST_PATH[kind]), sorted(off - {name} if on else off | {name}))
-    return err or f"`{name}` {'on' if on else 'off'}, {APPLIES[kind]}."
+        return next((err for n in names if (err := core.set_config(("mcp_servers", n, "enabled"), on))), None)
+    off = _disabled(core.read_config(), kind)
+    return core.set_config(".".join(LIST_PATH[kind]), sorted(off - set(names) if on else off | set(names)))
+
+
+def _summary(kind: str, changes: dict[str, bool]) -> str:
+    """`Off: a, b. On: c. Applies within a minute.`"""
+    parts = [f"{label}: {', '.join(f'`{n}`' for n, v in changes.items() if v is state)}"
+             for label, state in (("Off", False), ("On", True)) if state in changes.values()]
+    return ". ".join(parts) + f". {APPLIES[kind].capitalize()}."
+
+
+def switch(kind: str, names: list[str], on: bool) -> str:
+    known = {n for n, _, _ in items(kind)}
+    if names == ["all"]:
+        names = sorted(known)
+    if unknown := [n for n in names if n not in known]:
+        return f"No {KINDS[kind]} named {', '.join(f'`{n}`' for n in unknown)}."
+    if kind == "skills" and not on:
+        if kept := [n for n in names if n in _essential()]:
+            names = [n for n in names if n not in kept]
+            if not names:
+                return f"`{kept[0]}` is essential to Hermes and stays on."
+    return _write(kind, names, on) or _summary(kind, dict.fromkeys(names, on))
+
+
+def _label(n: str, t: int, on: bool) -> str:
+    return f"{'●' if on else '○'} {n}" + (f"  {k(t)}" if t else "")
+
+
+def _bulk(rows) -> list[dict]:
+    """All on / All off, each shown only when it would change something."""
+    return ([{"value": "*on", "label": "All on"}] if any(not on for _, _, on in rows) else []) + \
+           ([{"value": "*off", "label": "All off"}] if any(on for _, _, on in rows) else [])
+
+
+def _head(title: str, rows, note: str) -> str:
+    on = [r for r in rows if r[2]]
+    return (f"{note}\n" if note else "") + f"{title}: {len(on)} of {len(rows)} on, {k(sum(r[1] for r in on))} tokens"
+
+
+DONE = {"value": "*done", "label": "Done"}
+
+
+def _groups(rows) -> list[dict]:
+    """One button per skill category, largest first: `creative  8/9  610`."""
+    cat = {n: c for n, (_, c) in _skills().items()}
+    groups: dict[str, list] = {}
+    for r in rows:
+        groups.setdefault(cat.get(r[0], "other"), []).append(r)
+    order = sorted(groups.items(), key=lambda g: (-sum(r[1] for r in g[1]), g[0]))
+    return [{"value": f"#{c}", "label": f"{c}  {sum(r[2] for r in rs)}/{len(rs)}  {k(sum(r[1] for r in rs if r[2]))}"}
+            for c, rs in order]
+
+
+def _list(ctx, kind: str, category: str | None = None, changes: dict[str, bool] | None = None) -> str | None:
+    """Buttons stay open: each tap applies at once and the card comes back updated, until Done.
+    Top-level Skills shows categories; a category opens its own list."""
+    changes = {} if changes is None else changes
+    title, note = KINDS[kind] + (f" · {category}" if category else ""), ""
+    while True:
+        rows = [r for r in items(kind, category) if not (kind == "skills" and r[0] in _essential())]
+        if not rows:
+            return f"No {title}."
+        bulk = _bulk(rows)
+        cap = BUTTONS - len(bulk) - 1
+        middle = (_groups(rows) if kind == "skills" and not category
+                  else [{"value": n, "label": _label(n, t, on)} for n, t, on in rows])[:cap]
+        shown = {c["value"] for c in middle}
+        typed = [{"value": n} for n, _, _ in rows if n not in shown]  # beyond the buttons: type the name
+        picked = ctx.ask_choice(_head(title, rows, note), bulk + middle + [DONE] + typed)
+        if picked is None and not changes:  # nothing can ask here (CLI, agent): a table
+            table = core.table([[n, k(t) if t else "-", "on" if on else "off"] for n, t, on in rows[:30]],
+                               ["name", "tokens", "state"])
+            return f"{_head(title, rows, '')}\n{table}"[:1900]
+        if picked in (None, "*done"):
+            return _summary(kind, changes) if changes else None
+        if picked.startswith("#"):
+            return _list(ctx, kind, picked[1:], changes)
+        names, on = ([n for n, _, _ in rows], picked == "*on") if picked in ("*on", "*off") else \
+            ([picked], not dict((n, s) for n, _, s in rows)[picked])
+        if err := _write(kind, names, on):
+            return err
+        changes.update(dict.fromkeys(names, on))
+        note = _summary(kind, dict.fromkeys(names, on))
 
 
 def view(ctx, kind: str, arg: str) -> str | None:
-    """No arg: the ranked list as buttons (a table where nothing can ask). `<name> on|off`: switch."""
+    """No arg: buttons. `<name...> on|off` or `all on|off`: switch by text."""
     parts = arg.split()
-    if len(parts) == 2 and parts[1] in ("on", "off"):
-        return switch(kind, parts[0], parts[1] == "on")
+    if len(parts) >= 2 and parts[-1] in ("on", "off"):
+        return switch(kind, parts[:-1], parts[-1] == "on")
     if parts:
-        return f"/helm {kind} <name> on|off"
-    rows = items(kind)
-    if not rows:
-        return f"No {KINDS[kind]}."
-    on_rows = [r for r in rows if r[2]]
-    head = f"{KINDS[kind]}: {len(on_rows)} of {len(rows)} on, {k(sum(r[1] for r in on_rows))} tokens per request"
-    pick = [r for r in rows if not (kind == "skills" and r[0] in _essential())]
-    shown = pick[:BUTTONS]
-    if len(pick) > BUTTONS:
-        head += f"\nShowing the {BUTTONS} largest. Type any other name to switch it."
-    picked = ctx.ask_choice(head, [{"value": n, "label": f"{'●' if on else '○'} {n}" + (f"  {k(t)}" if t else "")}
-                                   for n, t, on in shown] + [{"value": n} for n, _, _ in pick[BUTTONS:]])
-    if picked is not None:
-        return switch(kind, picked, not dict((n, on) for n, _, on in rows)[picked])
-    table = core.table([[n, k(t) if t else "-", "on" if on else "off"] for n, t, on in rows[:30]],
-                       ["name", "tokens", "state"])
-    return f"{head}\n{table}"[:1900]
+        return f"/helm {kind} <name ...|all> on|off"
+    return _list(ctx, kind)
 
 
 def setup(ctx) -> dict:

@@ -101,6 +101,9 @@ def set_config(path: str | tuple, value: Any) -> str | None:
     return None
 
 
+CANCEL = {"value": "*cancel", "label": "Cancel"}
+
+
 def table(rows: list[list[Any]], header: list[str]) -> str:
     """Monospace table for Discord (code block keeps columns aligned)."""
     cells = [header] + [[str(c) for c in r] for r in rows]

@@ -3,10 +3,12 @@ import pytest
 from conftest import OWNER, helm, core
 from helm import toggle
 
+SKILLS = {"hermes-agent": (50, "core"), "pdf": (40, "docs"), "ocr": (35, "docs"), "web": (30, "research")}
+
 
 @pytest.fixture
 def run(ctx, monkeypatch):
-    monkeypatch.setattr(toggle, "_skill_tokens", lambda: {"hermes-agent": 50, "pdf": 40, "web": 30})
+    monkeypatch.setattr(toggle, "_skills", lambda: SKILLS)
     monkeypatch.setattr(toggle, "_toolset_tokens", lambda: {"browser": 900, "terminal": 1500, "mcp-github": 4100})
     ctx.config.update({"mcp_servers": {"github": {"command": "gh"}, "jira": {"enabled": "off"}},
                        "skills": {"disabled": ["web"]}})
@@ -14,48 +16,72 @@ def run(ctx, monkeypatch):
     return lambda args: ctx.commands["helm"](args, source=OWNER, platform="discord")
 
 
-def test_list_is_ranked_buttons_and_tap_switches(run, ctx):
-    ctx.choice = "github"
-    assert "`github` off" in run("mcp")
-    question, choices = ctx.asked[0]
-    assert question.startswith("MCP: 1 of 2 on, 4.1k tokens")
-    assert [c["label"] for c in choices] == ["● github  4.1k", "○ jira"]
-    assert ctx.config["mcp_servers"]["github"] == {"command": "gh", "enabled": False}
+def labels(ctx, n=0):
+    return [c.get("label") for c in ctx.asked[n][1] if "label" in c]
 
 
-def test_list_without_buttons_is_a_table(run, ctx):
-    out = run("toolsets")
-    assert out.index("terminal") < out.index("browser") and "mcp-github" not in out
+def test_list_stays_open_until_done(run, ctx):
+    ctx.choice = ["github", "jira", "*done"]
+    assert run("mcp") == "Off: `github`. On: `jira`. Applies within a minute."
+    assert ctx.asked[0][0] == "MCP: 1 of 2 on, 4.1k tokens"
+    assert labels(ctx) == ["All on", "All off", "● github  4.1k", "○ jira", "Done"]
+    assert ctx.asked[1][0].startswith("Off: `github`. Applies within a minute.\nMCP: 0 of 2 on")
+    assert labels(ctx, 2) == ["All on", "All off", "○ github  4.1k", "● jira", "Done"]
+    assert labels(ctx, 1) == ["All on", "○ github  4.1k", "○ jira", "Done"]  # all off: only All on (fake keeps tokens)
+    assert ctx.config["mcp_servers"] == {"github": {"command": "gh", "enabled": False}, "jira": {"enabled": True}}
 
 
-def test_essential_skill_has_no_button(run, ctx):
+def test_all_off_and_done_without_changes(run, ctx):
+    ctx.choice = ["*off", "*done"]
+    assert run("toolsets") == "Off: `terminal`, `browser`. Applies from your next message."
+    assert ctx.config["agent"]["disabled_toolsets"] == ["browser", "terminal"]
+    ctx.choice = ["*done"]
+    assert run("toolsets") is None
+
+
+def test_skills_open_by_category(run, ctx):
+    ctx.choice = ["#docs", "*off", "*done"]
+    assert run("skills") == "Off: `pdf`, `ocr`. Applies on /reload-skills or /new."
+    assert labels(ctx) == ["All on", "All off", "docs  2/2  75", "research  0/1  0", "Done"]  # no core group
+    assert ctx.asked[1][0] == "Skills · docs: 2 of 2 on, 75 tokens"
+    assert ctx.config["skills"]["disabled"] == ["ocr", "pdf", "web"]
+
+
+def test_skills_all_on_keeps_essential_out_of_the_list(run, ctx):
+    ctx.choice = ["*on", "*done"]
     run("skills")
-    assert [c["value"] for c in ctx.asked[0][1]] == ["pdf", "web"]
-    assert "essential" in run("skills hermes-agent off")
+    assert "hermes-agent" not in str(ctx.asked[0][1])
+    assert ctx.config["skills"]["disabled"] == []
 
 
-def test_more_than_24_keeps_the_rest_typeable(run, ctx, monkeypatch):
-    monkeypatch.setattr(toggle, "_skill_tokens", lambda: {f"s{i:02}": 100 - i for i in range(30)})
-    ctx.choice = "s29"
-    assert "`s29` off" in run("skills")
-    question, choices = ctx.asked[0]
-    assert "24 largest" in question and len(choices) == 30 and "label" not in choices[-1]
+def test_typed_name_beyond_the_buttons(run, ctx, monkeypatch):
+    monkeypatch.setattr(toggle, "_toolset_tokens", lambda: {f"t{i:02}": 100 - i for i in range(30)})
+    ctx.choice = ["t29", "*done"]
+    assert run("toolsets") == "Off: `t29`. Applies from your next message."
+    assert len(labels(ctx)) == 24 and labels(ctx)[-1] == "Done"
 
 
-def test_text_switch(run, ctx):
-    assert "within a minute" in run("mcp jira on")
-    assert ctx.config["mcp_servers"]["jira"]["enabled"] is True
-    assert "/reload-skills" in run("skills pdf off")
+def test_no_buttons_gives_a_table(run, ctx):
+    out = run("toolsets")
+    assert out.startswith("Toolsets: 2 of 2 on") and out.index("terminal") < out.index("browser")
+
+
+def test_text_switch_many_and_all(run, ctx):
+    assert run("skills pdf web off") == "Off: `pdf`, `web`. Applies on /reload-skills or /new."
     assert ctx.config["skills"]["disabled"] == ["pdf", "web"]
-    run("toolsets browser off")
-    assert ctx.config["agent"]["disabled_toolsets"] == ["browser"]
-    assert "No Toolsets named" in run("toolsets nope off")
-    assert run("toolsets browser maybe") == "/helm toolsets <name> on|off"
+    run("skills all off")
+    assert ctx.config["skills"]["disabled"] == ["ocr", "pdf", "web"]  # hermes-agent stays on
+    assert "essential" in run("skills hermes-agent off")
+    assert run("mcp jira on").startswith("On: `jira`")
+    assert run("toolsets nope off") == "No Toolsets named `nope`."
+    assert run("toolsets browser maybe") == "/helm toolsets <name ...|all> on|off"
 
 
-def test_config_error_is_reported(run, monkeypatch):
+def test_config_error_is_reported(run, ctx, monkeypatch):
     monkeypatch.setattr(core, "set_config", lambda path, value: "config.yaml is managed")
-    assert toggle.switch("toolsets", "browser", False) == "config.yaml is managed"
+    assert toggle.switch("toolsets", ["browser"], False) == "config.yaml is managed"
+    ctx.choice = ["browser"]
+    assert run("toolsets") == "config.yaml is managed"
 
 
 def test_mcp_name_with_dot(run, ctx):

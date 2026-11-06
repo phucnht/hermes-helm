@@ -2,7 +2,7 @@
 
 `/helm` in Discord opens a menu for the Hermes agent you run 24/7:
 
-- **MCP, Skills, Toolsets.** Everything installed, ranked by the tokens it adds to every request. Tap one to switch it on or off.
+- **MCP, Skills, Toolsets.** Everything installed, ranked by the tokens it adds to every request. Tap items to switch them, or All on / All off, then Done. Skills open by category.
 - **Lost turns.** Messages a gateway restart or crash killed mid-reply. Tap one to send it again.
 - **Budget.** Today's spend and the last 7 days. Tap a daily limit; at the limit Hermes stops taking new turns.
 
@@ -35,7 +35,7 @@ Every view also takes text, which is what the CLI and agents use:
 | | |
 |---|---|
 | `/helm mcp` · `skills` · `toolsets` | the ranked list |
-| `/helm mcp github off` | switch one; skills apply on `/reload-skills` or `/new`, MCP within a minute, toolsets on the next message |
+| `/helm skills pdf web off` · `mcp all on` | switch one, several or all; skills apply on `/reload-skills` or `/new`, MCP within a minute, toolsets on the next message |
 | `/helm lost` · `lost 2` · `lost clear` | list, resend, dismiss |
 | `/helm budget` · `budget 5` · `budget off` | spend, set or remove the daily limit |
 | `/helm modules budget off` | hide a whole section (`toggle`, `resume`, `budget`) |

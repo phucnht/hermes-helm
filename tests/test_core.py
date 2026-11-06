@@ -27,7 +27,7 @@ def test_menu_opens_the_tapped_view(ctx):
     run = boot(ctx)
     ctx.choice = ["budget", None]
     assert run("", source=OWNER, platform="discord").endswith("today")
-    assert [c["label"] for c in ctx.asked[0][1]] == ["MCP", "Skills", "Toolsets", "Lost turns", "Budget"]
+    assert [c["label"] for c in ctx.asked[0][1]] == ["MCP", "Skills", "Toolsets", "Lost turns", "Budget", "Cancel"]
     assert ctx.asked[1][0].startswith("$0.00 today")
 
 
@@ -35,7 +35,9 @@ def test_menu_hides_off_modules_and_unknown_view_shows_usage(ctx):
     run = boot(ctx)
     ctx.settings["modules"] = {"toggle": False}
     run("", source=OWNER, platform="discord")
-    assert [c["value"] for c in ctx.asked[0][1]] == ["lost", "budget"]
+    assert [c["value"] for c in ctx.asked[0][1]] == ["lost", "budget", "*cancel"]
+    ctx.choice = "*cancel"
+    assert run("", source=OWNER, platform="discord") is None
     assert run("nope", source=OWNER, platform="discord") == helm.USAGE
 
 

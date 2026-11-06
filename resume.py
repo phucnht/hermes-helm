@@ -87,7 +87,9 @@ def setup(ctx):
         head = "Lost turns, newest first\n" + "\n".join(
             f"{n}. {_age(ts)}  {text[:70]}" for n, (_, ts, _, _, text) in enumerate(rows, 1))
         picked = ctx.ask_choice(head, [{"value": str(n), "label": f"Replay {n}"} for n in range(1, len(rows) + 1)]
-                                + [{"value": "clear", "label": "Clear"}])
+                                + [{"value": "clear", "label": "Clear"}, core.CANCEL])
+        if picked == "*cancel":
+            return None
         if picked is None:
             return head
         return clear() if picked == "clear" else replay(rows, int(picked))

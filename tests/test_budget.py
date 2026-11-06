@@ -72,7 +72,7 @@ def test_view_shows_spend_and_preset_buttons(ctx, run):
     assert run() == "Daily limit $20."
     question, choices = ctx.asked[0]
     assert question.startswith("$2.00 of $5.00 today") and budget._today()[5:] in question
-    assert [c["label"] for c in choices] == ["$1", "$20", "No limit"]  # the current $5 is not offered
+    assert [c["label"] for c in choices] == ["$1", "$20", "No limit", "Cancel"]  # current $5 not offered
     ctx.choice = None
     assert run().startswith("$2.00 of $5.00 today")  # no buttons: plain text
 

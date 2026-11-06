@@ -37,7 +37,7 @@ def test_replay_injects_and_marks(ctx, run, monkeypatch):
     restart(monkeypatch)
     ctx.choice = "1"
     assert run("lost") == "Replayed 1."  # newest first; tapped "Replay 1"
-    assert [c["label"] for c in ctx.asked[0][1]] == ["Replay 1", "Replay 2", "Clear"]
+    assert [c["label"] for c in ctx.asked[0][1]] == ["Replay 1", "Replay 2", "Clear", "Cancel"]
     ctx.choice = None
     assert ctx.posted == [("inject", KEY, "newer")]
     assert "newer" not in run("lost") and "older" in run("lost")
