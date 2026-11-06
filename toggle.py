@@ -142,7 +142,7 @@ def _list(ctx, kind: str, category: str | None = None, changes: dict[str, bool] 
                   else [{"value": n, "label": _label(n, t, on)} for n, t, on in rows])[:cap]
         shown = {c["value"] for c in middle}
         typed = [{"value": n} for n, _, _ in rows if n not in shown]  # beyond the buttons: type the name
-        picked = ctx.ask_choice(_head(title, rows, note), bulk + middle + [DONE] + typed)
+        picked = ctx.ask_choice(_head(title, rows, note), middle + bulk + [DONE] + typed)
         if picked is None and not changes:  # nothing can ask here (CLI, agent): a table
             table = core.table([[n, k(t) if t else "-", "on" if on else "off"] for n, t, on in rows[:30]],
                                ["name", "tokens", "state"])

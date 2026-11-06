@@ -24,10 +24,10 @@ def test_list_stays_open_until_done(run, ctx):
     ctx.choice = ["github", "jira", "*done"]
     assert run("mcp") == "Off: `github`. On: `jira`. Applies within a minute."
     assert ctx.asked[0][0] == "MCP: 1 of 2 on, 4.1k tokens"
-    assert labels(ctx) == ["All on", "All off", "● github  4.1k", "○ jira", "Done"]
+    assert labels(ctx) == ["● github  4.1k", "○ jira", "All on", "All off", "Done"]
     assert ctx.asked[1][0].startswith("Off: `github`. Applies within a minute.\nMCP: 0 of 2 on")
-    assert labels(ctx, 2) == ["All on", "All off", "○ github  4.1k", "● jira", "Done"]
-    assert labels(ctx, 1) == ["All on", "○ github  4.1k", "○ jira", "Done"]  # all off: only All on (fake keeps tokens)
+    assert labels(ctx, 2) == ["○ github  4.1k", "● jira", "All on", "All off", "Done"]
+    assert labels(ctx, 1) == ["○ github  4.1k", "○ jira", "All on", "Done"]  # all off: only All on (fake keeps tokens)
     assert ctx.config["mcp_servers"] == {"github": {"command": "gh", "enabled": False}, "jira": {"enabled": True}}
 
 
@@ -42,7 +42,7 @@ def test_all_off_and_done_without_changes(run, ctx):
 def test_skills_open_by_category(run, ctx):
     ctx.choice = ["#docs", "*off", "*done"]
     assert run("skills") == "Off: `pdf`, `ocr`. Applies on /reload-skills or /new."
-    assert labels(ctx) == ["All on", "All off", "docs  2/2  75", "research  0/1  0", "Done"]  # no core group
+    assert labels(ctx) == ["docs  2/2  75", "research  0/1  0", "All on", "All off", "Done"]  # no core group
     assert ctx.asked[1][0] == "Skills · docs: 2 of 2 on, 75 tokens"
     assert ctx.config["skills"]["disabled"] == ["ocr", "pdf", "web"]
 
