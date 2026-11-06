@@ -24,10 +24,10 @@ def test_list_stays_open_until_done(run, ctx):
     ctx.choice = ["github", "jira", "*done"]
     assert run("mcp") == "Off: `github`. On: `jira`. Applies within a minute."
     assert ctx.asked[0][0] == "MCP: 1 of 2 on, 4.1k tokens"
-    assert labels(ctx) == ["● github  4.1k", "○ jira", "All on", "All off", "Done"]
+    assert labels(ctx) == ["🟢 github  4.1k", "⚫ jira", "All on", "All off", "Done"]
     assert ctx.asked[1][0].startswith("Off: `github`. Applies within a minute.\nMCP: 0 of 2 on")
-    assert labels(ctx, 2) == ["○ github  4.1k", "● jira", "All on", "All off", "Done"]
-    assert labels(ctx, 1) == ["○ github  4.1k", "○ jira", "All on", "Done"]  # all off: only All on (fake keeps tokens)
+    assert labels(ctx, 2) == ["⚫ github  4.1k", "🟢 jira", "All on", "All off", "Done"]
+    assert labels(ctx, 1) == ["⚫ github  4.1k", "⚫ jira", "All on", "Done"]  # all off: only All on (fake keeps tokens)
     assert ctx.config["mcp_servers"] == {"github": {"command": "gh", "enabled": False}, "jira": {"enabled": True}}
 
 

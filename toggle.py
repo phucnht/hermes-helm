@@ -104,7 +104,7 @@ def switch(kind: str, names: list[str], on: bool) -> str:
 
 
 def _label(n: str, t: int, on: bool) -> str:
-    return f"{'●' if on else '○'} {n}" + (f"  {k(t)}" if t else "")
+    return f"{'🟢' if on else '⚫'} {n}" + (f"  {k(t)}" if t else "")
 
 
 def _bulk(rows) -> list[dict]:
