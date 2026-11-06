@@ -1,3 +1,5 @@
+import importlib
+
 from conftest import OWNER, helm, core
 
 
@@ -23,10 +25,23 @@ def test_local_cli_is_owner(ctx):
     assert "hermes-helm" in boot(ctx)("", source=None, platform="cli")
 
 
-def test_help_lists_modules(ctx):
-    out = boot(ctx)("", source=OWNER, platform="discord")
+def test_help_lists_every_command_and_fits_discord(ctx):
+    run = boot(ctx)
+    out = run("", source=OWNER, platform="discord")
+    assert len(out) < 2000 and "(off" not in out
     for mid in helm.MODULES:
-        assert f"`{mid}` (on)" in out
+        for cmd, _ in helm.HELP[mid][1]:
+            assert f"`{cmd}`" in out
+            sub = cmd.split()[1] if len(cmd.split()) > 1 else ""
+            assert sub in importlib.import_module(f"helm.{mid}").setup(ctx), f"no handler for `{cmd}`"
+    ctx.settings["modules"] = {"cost": False}
+    assert "(off: `/helm modules cost on`)" in run("", source=OWNER, platform="discord")
+    assert "`toggle list`" in run("toggle nope", source=OWNER, platform="discord")
+
+
+def test_arg_hints_fit_discord_option_description(ctx):
+    boot(ctx)  # Discord shows "Arguments: <hint>" in a 100-char field
+    assert all(len("Arguments: " + h) <= 100 for h in ctx.hints.values())
 
 
 def test_module_switch_writes_setting(ctx):

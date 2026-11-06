@@ -20,7 +20,7 @@ class FakeCtx:
 
     def __init__(self, settings=None):
         self.settings = settings or {}
-        self.commands, self.hooks, self.posted = {}, {}, []
+        self.commands, self.hooks, self.posted, self.hints = {}, {}, [], {}
         self.choice = None  # what ask_choice returns
 
     def get_config(self, key, default=None):
@@ -33,6 +33,7 @@ class FakeCtx:
 
     def register_command(self, name, handler, description="", args_hint="", argument_mode=None):
         self.commands[name] = handler
+        self.hints[name] = args_hint
 
     def register_hook(self, name, fn, **kw):
         self.hooks.setdefault(name, []).append(fn)
