@@ -54,11 +54,12 @@ def test_skills_all_on_keeps_essential_out_of_the_list(run, ctx):
     assert ctx.config["skills"]["disabled"] == []
 
 
-def test_typed_name_beyond_the_buttons(run, ctx, monkeypatch):
+def test_every_choice_is_a_button_within_the_cap(run, ctx, monkeypatch):
     monkeypatch.setattr(toggle, "_toolset_tokens", lambda: {f"t{i:02}": 100 - i for i in range(30)})
-    ctx.choice = ["t29", "*done"]
-    assert run("toolsets") == "Off: `t29`. Applies from your next message."
-    assert len(labels(ctx)) == 24 and labels(ctx)[-1] == "Done"
+    ctx.choice = ["*done"]
+    run("toolsets")
+    assert len(ctx.asked[0][1]) == 24 and labels(ctx)[-1] == "Done"  # Hermes adds Other as the 25th
+    assert run("toolsets t29 off") == "Off: `t29`. Applies from your next message."
 
 
 def test_no_buttons_gives_a_table(run, ctx):
