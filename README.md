@@ -42,7 +42,7 @@ Every view also takes text, which is what the CLI and agents use:
 
 ## How it counts
 
-**Tokens** follow Hermes' own rule for `/context`: a tool's schema or a skill's index line, bytes ÷ 4. A skill's full SKILL.md loads only when used, so it is not counted. An MCP server that is off shows no number, since it isn't connected.
+**Tokens** are what each request carries, by Hermes' own rule for `/context` (bytes ÷ 4). For toolsets and MCP that is the tool list Hermes builds for this platform, so tools it never sends show no number: ones missing their setup, and ones Tool Search defers behind `tool_search`. For skills it is the index line; a skill's full SKILL.md loads only when used. An MCP server that is off isn't connected, so it shows no number.
 
 **Spend** prices every model call, main and auxiliary, with your `budget.prices` first and Hermes' price table second. Hermes prices a ChatGPT/Codex subscription at $0, so on a subscription add a rate if you want a limit:
 

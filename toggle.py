@@ -23,12 +23,37 @@ def k(tok: int) -> str:
     return f"{tok / 1000:.1f}k" if tok >= 1000 else str(tok)
 
 
+def _platform() -> str:
+    try:
+        from gateway.session_context import get_session_env
+        return get_session_env("HERMES_SESSION_PLATFORM", "") or "cli"
+    except Exception:
+        return "cli"
+
+
 def _toolset_tokens() -> dict[str, int]:
-    """{toolset: tokens of its tool schemas}. MCP servers register as toolset ``mcp-<server>``."""
-    from tools.registry import registry
-    return {ts: _tokens("".join(json.dumps({"type": "function", "function": registry.get_schema(n) or {}},
-                                           ensure_ascii=False) for n in registry.get_tool_names_for_toolset(ts)))
-            for ts in registry.get_registered_toolset_names()}
+    """{toolset: tokens its tools add to each request here}, from the tool list Hermes itself sends the model
+    on this platform, built as if nothing were switched off so an off toolset still shows its cost. Tools that
+    never reach the model (setup missing, or deferred behind Tool Search) count 0. MCP servers are ``mcp-<name>``."""
+    import model_tools
+    from hermes_cli.config import load_config_readonly
+    from hermes_cli.tools_config import _get_platform_tools  # ponytail: private; what `hermes tools` resolves with
+    from toolsets import resolve_toolset, session_disabled_toolsets
+    cfg = dict(load_config_readonly())
+    cfg["agent"] = {**(cfg.get("agent") or {}), "disabled_toolsets": []}
+    platform = _platform()
+    out = dict.fromkeys(sorted(_get_platform_tools(cfg, platform)), 0)
+    owner = {}  # tool -> first toolset that brings it in (switching that toolset off strips it)
+    for ts in out:
+        for name in resolve_toolset(ts):
+            owner.setdefault(name, ts)
+    sent = model_tools.get_tool_definitions(enabled_toolsets=list(out), quiet_mode=True,
+                                            disabled_toolsets=session_disabled_toolsets(None, platform))
+    for tool in sent or []:
+        ts = owner.get(tool["function"]["name"])
+        if ts:  # the tool_search bridge belongs to no toolset you can switch
+            out[ts] += _tokens(json.dumps(tool, ensure_ascii=False))
+    return out
 
 
 def _skills() -> dict[str, tuple[int, str]]:
