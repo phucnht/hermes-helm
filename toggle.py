@@ -69,6 +69,11 @@ def items(kind: str, category: str | None = None) -> list[tuple[str, int, bool]]
     return sorted(rows, key=lambda r: (-r[1], r[0]))
 
 
+def total(kind: str) -> int:
+    """Tokens the switched-on items of *kind* add to every request."""
+    return sum(t for _, t, on in items(kind) if on)
+
+
 def _write(kind: str, names: list[str], on: bool) -> str | None:
     """Switch every name in one go; an error string, or None."""
     if kind == "mcp":

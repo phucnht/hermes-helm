@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 
-from . import core
+from . import core, toggle
 
 MODULES = ("toggle", "resume", "budget")
 MENU = {"mcp": "MCP", "skills": "Skills", "toolsets": "Toolsets", "lost": "Lost turns", "budget": "Budget"}
@@ -17,6 +17,15 @@ def _modules_cmd(args: str) -> str:
         return f"/helm modules <{'|'.join(MODULES)}> on|off"
     err = core.set_config(f"plugins.entries.{core.PLUGIN}.settings.modules.{parts[0]}", parts[1] == "on")
     return err or f"{parts[0]} {parts[1]}."
+
+
+def _menu_label(view: str) -> str:
+    """Toggle views carry their token total, so the menu shows where the context goes."""
+    try:
+        tok = toggle.total(view) if view in toggle.KINDS else 0
+    except Exception:  # a registry hiccup costs the number, not the menu
+        tok = 0
+    return f"{MENU[view]}  {toggle.k(tok)}" if tok else MENU[view]
 
 
 def register(ctx):
@@ -45,7 +54,7 @@ def register(ctx):
             return run(name, arg, source)
         if name:
             return USAGE
-        menu = [{"value": v, "label": label} for v, label in MENU.items() if core.module_on(ctx, views[v][0])]
+        menu = [{"value": v, "label": _menu_label(v)} for v in MENU if core.module_on(ctx, views[v][0])]
         picked = ctx.ask_choice("hermes-helm", menu + [core.CANCEL])
         if picked == "*cancel":
             return None

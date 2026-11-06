@@ -23,11 +23,14 @@ def test_local_cli_is_owner(ctx):
     assert boot(ctx)("", source=None, platform="cli") == helm.USAGE  # owner; nothing to tap, so text
 
 
-def test_menu_opens_the_tapped_view(ctx):
+def test_menu_opens_the_tapped_view(ctx, monkeypatch):
+    from helm import toggle
+    monkeypatch.setattr(toggle, "total", lambda kind: {"mcp": 4100, "skills": 810}.get(kind, 0))
     run = boot(ctx)
     ctx.choice = ["budget", None]
     assert run("", source=OWNER, platform="discord").endswith("today")
-    assert [c["label"] for c in ctx.asked[0][1]] == ["MCP", "Skills", "Toolsets", "Lost turns", "Budget", "Cancel"]
+    assert [c["label"] for c in ctx.asked[0][1]] == ["MCP  4.1k", "Skills  810", "Toolsets", "Lost turns", "Budget",
+                                                     "Cancel"]
     assert ctx.asked[1][0].startswith("$0.00 today")
 
 
