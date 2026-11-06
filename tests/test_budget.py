@@ -10,7 +10,7 @@ USAGE = {"input_tokens": 1000, "output_tokens": 500, "prompt_tokens": 1000}
 def run(ctx, monkeypatch):
     monkeypatch.setattr(budget, "_price", lambda model, usage, provider=None, prices=None: 1.0)
     helm.register(ctx)
-    return lambda args="": ctx.commands["budget"](args, source=OWNER, platform="discord")
+    return lambda args="": ctx.commands["helm"](f"budget {args}", source=OWNER, platform="discord")
 
 
 def blocks(ctx, hook):
@@ -32,7 +32,7 @@ def test_block_when_over_limit(ctx, run):
     ctx.fire("post_api_request", model="m", usage=USAGE)
     for hook in ("pre_llm_call", "pre_tool_call"):
         (b,) = blocks(ctx, hook)
-        assert "Daily budget $2.00 reached ($2.00 spent)" in b["message"] and "/budget off" in b["message"]
+        assert b["message"] == "Daily budget $2.00 reached. `/helm budget` to raise it."
 
 
 def test_no_block_without_limit(ctx, run):
@@ -48,32 +48,33 @@ def test_warns_once_at_threshold(ctx, run):
     assert ctx.posted == []
     for _ in range(3):
         ctx.fire("post_api_request", model="m", usage=USAGE)
-    assert len(ctx.posted) == 1 and ctx.posted[0].startswith("⚠️") and "$2.00 of $10.00" in ctx.posted[0]
+    assert ctx.posted == ["⚠️ $2.00 of $10.00 spent today. `/helm budget`"]
 
 
-def test_set_and_off_write_config(ctx, run):
+def test_text_sets_and_removes_limit(ctx, run):
     settings = lambda: ctx.config["plugins"]["entries"]["hermes-helm"]["settings"]["budget"]["daily_usd"]
-    assert "$5.50" in run("set 5.5") and settings() == 5.5
-    assert "off" in run("off") and settings() == 0.0
+    assert run("5.5") == "Daily limit $5.5." and settings() == 5.5
+    assert run("$7") == "Daily limit $7." and settings() == 7.0
+    assert run("off") == "No daily limit." and settings() == 0.0
 
 
-@pytest.mark.parametrize("bad", ["", "abc", "-1", "nan", "inf"])
+@pytest.mark.parametrize("bad", ["abc", "-1", "nan", "inf"])
 def test_bad_number_rejected(ctx, run, bad):
-    assert "Usage" in run(f"set {bad}")
+    assert run(bad) == "/helm budget <usd> | off"
     assert "plugins" not in ctx.config
 
 
-def test_status(ctx, run):
-    assert "no limit" in run()
-    ctx.settings["budget"] = {"daily_usd": 4}
-    for model in ("a", "a", "b", "c", "d"):
+def test_view_shows_spend_and_preset_buttons(ctx, run):
+    ctx.settings["budget"] = {"daily_usd": 5}
+    for model in ("a", "b"):
         ctx.fire("post_api_request", model=model, usage=USAGE)
-    out = run("status")
-    assert "$5.00 of $4.00 (125% used)" in out
-    top = out.split("Top models today:")[1].split("Last 7 days:")[0]
-    assert "a " in top and top.count("$1.00") == 2 and "$2.00" in top
-    assert budget._today() in out.split("Last 7 days:")[1] and len(out) < 1900
-    assert "Usage" in run("5")
+    ctx.choice = "20"
+    assert run() == "Daily limit $20."
+    question, choices = ctx.asked[0]
+    assert question.startswith("$2.00 of $5.00 today") and budget._today()[5:] in question
+    assert [c["label"] for c in choices] == ["$1", "$20", "No limit"]  # the current $5 is not offered
+    ctx.choice = None
+    assert run().startswith("$2.00 of $5.00 today")  # no buttons: plain text
 
 
 def test_price_falls_back_to_table():

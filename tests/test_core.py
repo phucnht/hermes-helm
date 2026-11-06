@@ -1,5 +1,3 @@
-import importlib
-
 from conftest import OWNER, helm, core
 
 
@@ -8,35 +6,37 @@ def boot(ctx):
     return ctx.commands["helm"]
 
 
-def test_registers_root_and_aliases(ctx):
+def test_registers_one_command(ctx):
     boot(ctx)
-    assert set(ctx.commands) == {"helm", "pending", "budget"}
+    assert set(ctx.commands) == {"helm"}
 
 
 def test_owner_gate_fails_closed(ctx):
     run = boot(ctx)
-    assert "Only the bot owner" in run("", source={"user_id": "7"}, platform="discord")
-    assert "Only the bot owner" in run("", source=None, platform="discord")
+    assert "Only the owner" in run("", source={"user_id": "7"}, platform="discord")
+    assert "Only the owner" in run("", source=None, platform="discord")
     ctx.settings["owner_ids"] = []
-    assert "Only the bot owner" in run("", source=OWNER, platform="discord")
+    assert "Only the owner" in run("", source=OWNER, platform="discord")
 
 
 def test_local_cli_is_owner(ctx):
-    assert "hermes-helm" in boot(ctx)("", source=None, platform="cli")
+    assert boot(ctx)("", source=None, platform="cli") == helm.USAGE  # owner; nothing to tap, so text
 
 
-def test_help_lists_every_command_and_fits_discord(ctx):
+def test_menu_opens_the_tapped_view(ctx):
     run = boot(ctx)
-    out = run("", source=OWNER, platform="discord")
-    assert len(out) < 2000 and "(off" not in out
-    for mid in helm.MODULES:
-        for cmd, _ in helm.HELP[mid][1]:
-            assert f"`{cmd}`" in out
-            sub = cmd.split()[1] if len(cmd.split()) > 1 else ""
-            assert sub in importlib.import_module(f"helm.{mid}").setup(ctx), f"no handler for `{cmd}`"
-    ctx.settings["modules"] = {"cost": False}
-    assert "(off: `/helm modules cost on`)" in run("", source=OWNER, platform="discord")
-    assert "`toggle list`" in run("toggle nope", source=OWNER, platform="discord")
+    ctx.choice = ["budget", None]
+    assert run("", source=OWNER, platform="discord").endswith("today")
+    assert [c["label"] for c in ctx.asked[0][1]] == ["MCP", "Skills", "Toolsets", "Lost turns", "Budget"]
+    assert ctx.asked[1][0].startswith("$0.00 today")
+
+
+def test_menu_hides_off_modules_and_unknown_view_shows_usage(ctx):
+    run = boot(ctx)
+    ctx.settings["modules"] = {"toggle": False}
+    run("", source=OWNER, platform="discord")
+    assert [c["value"] for c in ctx.asked[0][1]] == ["lost", "budget"]
+    assert run("nope", source=OWNER, platform="discord") == helm.USAGE
 
 
 def test_arg_hints_fit_discord_option_description(ctx):
@@ -46,10 +46,10 @@ def test_arg_hints_fit_discord_option_description(ctx):
 
 def test_module_switch_writes_setting(ctx):
     run = boot(ctx)
-    assert "now off" in run("modules budget off", source=OWNER, platform="discord")
+    assert run("modules budget off", source=OWNER, platform="discord") == "budget off."
     assert ctx.config["plugins"]["entries"]["hermes-helm"]["settings"]["modules"]["budget"] is False
     assert core.execute("SELECT key FROM audit")[0][0].endswith("modules.budget")
-    assert "Usage" in run("modules nope off", source=OWNER, platform="discord")
+    assert run("modules nope off", source=OWNER, platform="discord").startswith("/helm modules")
 
 
 def test_off_module_refuses_and_hooks_go_quiet(ctx):

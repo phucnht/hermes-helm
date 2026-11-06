@@ -6,62 +6,59 @@ from helm import toggle
 
 @pytest.fixture
 def run(ctx, monkeypatch):
-    monkeypatch.setattr(toggle, "_skills", lambda: ["hermes-agent", "pdf", "web"])
-    monkeypatch.setattr(toggle, "_toolsets", lambda: ["browser", "terminal"])
+    monkeypatch.setattr(toggle, "_skill_tokens", lambda: {"hermes-agent": 50, "pdf": 40, "web": 30})
+    monkeypatch.setattr(toggle, "_toolset_tokens", lambda: {"browser": 900, "terminal": 1500, "mcp-github": 4100})
     ctx.config.update({"mcp_servers": {"github": {"command": "gh"}, "jira": {"enabled": "off"}},
                        "skills": {"disabled": ["web"]}})
     helm.register(ctx)
     return lambda args: ctx.commands["helm"](args, source=OWNER, platform="discord")
 
 
-def test_list_shows_state(run):
-    rows = {tuple(line.split()) for line in run("toggle list").splitlines()}
-    assert {("mcp", "github", "on"), ("mcp", "jira", "off"), ("skill", "web", "off"),
-            ("skill", "pdf", "on"), ("toolset", "terminal", "on")} <= rows
-    assert "github" not in run("toggle list skills") and "Usage" in run("toggle list nope")
-
-
-def test_list_truncates(run, monkeypatch):
-    monkeypatch.setattr(toggle, "_skills", lambda: [f"skill-{i:03}" for i in range(300)])
-    out = run("toggle list skill")
-    assert len(out) < 1900 and "more" in out.splitlines()[-1]
-
-
-def test_mcp_on_off(run, ctx):
-    assert "/reload-mcp" in run("toggle mcp github off")
+def test_list_is_ranked_buttons_and_tap_switches(run, ctx):
+    ctx.choice = "github"
+    assert "`github` off" in run("mcp")
+    question, choices = ctx.asked[0]
+    assert question.startswith("MCP: 1 of 2 on, 4.1k tokens")
+    assert [c["label"] for c in choices] == ["● github  4.1k", "○ jira"]
     assert ctx.config["mcp_servers"]["github"] == {"command": "gh", "enabled": False}
-    run("toggle mcp jira on")
+
+
+def test_list_without_buttons_is_a_table(run, ctx):
+    out = run("toolsets")
+    assert out.index("terminal") < out.index("browser") and "mcp-github" not in out
+
+
+def test_essential_skill_has_no_button(run, ctx):
+    run("skills")
+    assert [c["value"] for c in ctx.asked[0][1]] == ["pdf", "web"]
+    assert "essential" in run("skills hermes-agent off")
+
+
+def test_more_than_24_keeps_the_rest_typeable(run, ctx, monkeypatch):
+    monkeypatch.setattr(toggle, "_skill_tokens", lambda: {f"s{i:02}": 100 - i for i in range(30)})
+    ctx.choice = "s29"
+    assert "`s29` off" in run("skills")
+    question, choices = ctx.asked[0]
+    assert "24 largest" in question and len(choices) == 30 and "label" not in choices[-1]
+
+
+def test_text_switch(run, ctx):
+    assert "within a minute" in run("mcp jira on")
     assert ctx.config["mcp_servers"]["jira"]["enabled"] is True
-    assert "Known: github, jira" in run("toggle mcp nope off")
-
-
-def test_skill_on_off(run, ctx):
-    assert "/reload-skills" in run("toggle skill pdf off")
+    assert "/reload-skills" in run("skills pdf off")
     assert ctx.config["skills"]["disabled"] == ["pdf", "web"]
-    run("toggle skill web on")
-    assert ctx.config["skills"]["disabled"] == ["pdf"]
-    assert "Unknown skill" in run("toggle skill nope off")
-    assert "essential" in run("toggle skill hermes-agent off")
-    assert ctx.config["skills"]["disabled"] == ["pdf"]
-
-
-def test_toolset_on_off(run, ctx):
-    assert "next message" in run("toggle toolset browser off")
+    run("toolsets browser off")
     assert ctx.config["agent"]["disabled_toolsets"] == ["browser"]
-    run("toggle toolset browser on")
-    assert ctx.config["agent"]["disabled_toolsets"] == []
-    assert "Unknown toolset" in run("toggle toolset nope off")
-    assert "Usage" in run("toggle toolset browser maybe")
+    assert "No Toolsets named" in run("toolsets nope off")
+    assert run("toolsets browser maybe") == "/helm toolsets <name> on|off"
 
 
-def test_apply_reports_config_error(run, monkeypatch):
+def test_config_error_is_reported(run, monkeypatch):
     monkeypatch.setattr(core, "set_config", lambda path, value: "config.yaml is managed")
-    assert toggle.apply("toolset", "browser", False) == "config.yaml is managed"
-    assert "Unknown kind" in toggle.apply("tool", "browser", False)
+    assert toggle.switch("toolsets", "browser", False) == "config.yaml is managed"
 
 
-def test_mcp_name_with_dot(ctx):
+def test_mcp_name_with_dot(run, ctx):
     ctx.config["mcp_servers"] = {"my.server": {}}
-    helm.register(ctx)
-    ctx.commands["helm"]("toggle mcp my.server off", source=OWNER, platform="discord")
+    run("mcp my.server off")
     assert ctx.config["mcp_servers"]["my.server"]["enabled"] is False

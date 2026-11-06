@@ -9,7 +9,7 @@ import time
 from . import core
 
 LIMIT_PATH = f"plugins.entries.{core.PLUGIN}.settings.budget.daily_usd"
-USAGE = "Usage: /budget [status] | /budget set <usd> | /budget off"
+PRESETS = (1, 5, 20)
 
 
 def _today(days_ago: int = 0) -> str:
@@ -62,14 +62,12 @@ def setup(ctx):
         # Warn only from the main turn: it always has a bound session for post_message.
         if cap and spent() >= cap * pct / 100 and core.execute(
                 "INSERT OR IGNORE INTO budget_warned VALUES (?) RETURNING day", (_today(),)):
-            ctx.post_message(f"⚠️ Budget: ${spent():.2f} of ${cap:.2f} spent today ({pct:g}% warning). "
-                             "`/budget` for details.")
+            ctx.post_message(f"⚠️ ${spent():.2f} of ${cap:.2f} spent today. `/helm budget`")
 
     def brake(**_):
         cap = limit()
         if cap and spent() >= cap:
-            return {"action": "block", "message": f"Daily budget ${cap:.2f} reached (${spent():.2f} spent). "
-                                                  "`/budget set <usd>` to raise it or `/budget off`."}
+            return {"action": "block", "message": f"Daily budget ${cap:.2f} reached. `/helm budget` to raise it."}
         return None
 
     core.hook(ctx, "budget", "post_api_request", after_api_request)
@@ -77,34 +75,31 @@ def setup(ctx):
     core.hook(ctx, "budget", "pre_llm_call", brake)
     core.hook(ctx, "budget", "pre_tool_call", brake)
 
-    def status(arg, source):
-        if arg:
-            return USAGE
+    def summary() -> str:
         cap, s = limit(), spent()
-        lines = [f"**Budget** today ${s:.2f}" + (f" of ${cap:.2f} ({s / cap * 100:.0f}% used)" if cap else " (no limit)")]
+        lines = [f"${s:.2f}" + (f" of ${cap:.2f}" if cap else "") + " today"]
         unpriced = core.execute("SELECT COUNT(*) FROM usage WHERE day=? AND usd IS NULL", (_today(),))[0][0]
         if unpriced:
-            lines.append(f"{unpriced} call(s) today have no known price; add them to budget.prices.")
-        top = core.execute("SELECT model, COALESCE(SUM(usd), 0), COUNT(*) FROM usage WHERE day=? "
-                           "GROUP BY model ORDER BY 2 DESC LIMIT 3", (_today(),))
-        if top:
-            lines.append("Top models today:\n" + core.table([[m[:40], f"${u:.2f}", n] for m, u, n in top],
-                                                            ["model", "usd", "calls"]))
+            lines.append(f"{unpriced} call(s) have no price. Add the model to budget.prices.")
         week = core.execute("SELECT day, COALESCE(SUM(usd), 0), COUNT(*) FROM usage WHERE day>=? "
                             "GROUP BY day ORDER BY day DESC", (_today(6),))
         if week:
-            lines.append("Last 7 days:\n" + core.table([[d, f"${u:.2f}", n] for d, u, n in week],
-                                                       ["day", "usd", "calls"]))
+            lines.append(core.table([[d[5:], f"${u:.2f}", n] for d, u, n in week], ["day", "usd", "calls"]))
         return "\n".join(lines)
 
-    def set_limit(arg, source):
-        try:
-            usd = float(arg)
-        except ValueError:
-            usd = -1.0
-        if not math.isfinite(usd) or usd < 0:
-            return "Usage: /budget set <usd>, a number like 5 or 2.50 (0 turns the limit off)."
-        err = core.set_config(LIMIT_PATH, usd)
-        return err or (f"Daily budget set to ${usd:.2f}." if usd else "Daily budget off.")
+    def set_limit(usd: float) -> str:
+        return core.set_config(LIMIT_PATH, usd) or (f"Daily limit ${usd:g}." if usd else "No daily limit.")
 
-    return {"": status, "status": status, "set": set_limit, "off": lambda arg, source: set_limit("0", source)}
+    def view(arg, source):
+        """No arg: today's spend, tap a limit. `<usd>` sets the daily limit, `off` removes it."""
+        if arg:
+            try:
+                usd = 0.0 if arg == "off" else float(arg.lstrip("$"))
+            except ValueError:
+                usd = -1.0
+            return set_limit(usd) if math.isfinite(usd) and usd >= 0 else "/helm budget <usd> | off"
+        choices = [{"value": str(p), "label": f"${p}"} for p in PRESETS if p != limit()]
+        picked = ctx.ask_choice(summary(), choices + ([{"value": "0", "label": "No limit"}] if limit() else []))
+        return summary() if picked is None else set_limit(float(picked))
+
+    return {"budget": view}

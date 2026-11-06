@@ -24,10 +24,10 @@ def test_open_turn_from_old_boot_is_lost(ctx, run, monkeypatch):
     turn(ctx, "t1", "first")
     turn(ctx, "t2", "second")
     ctx.fire("on_session_end", turn_id="t2", completed=True)
-    assert run("resume pending") == "No lost turns."  # same boot: t1 is still running
+    assert run("lost") == "No lost turns."  # same boot: t1 is still running
     restart(monkeypatch)
-    out = ctx.commands["pending"]("", source=OWNER, platform="discord")
-    assert "1. " in out and "first" in out and "second" not in out and "attachments" in out
+    out = run("lost")
+    assert "1. " in out and "first" in out and "second" not in out
     assert core.execute("SELECT status FROM turns WHERE turn_id='t2'") == [("done",)]
 
 
@@ -35,26 +35,31 @@ def test_replay_injects_and_marks(ctx, run, monkeypatch):
     turn(ctx, "t1", "older")
     turn(ctx, "t2", "newer")
     restart(monkeypatch)
-    assert run("resume replay 1") == "Replayed #1."  # newest first
+    ctx.choice = "1"
+    assert run("lost") == "Replayed 1."  # newest first; tapped "Replay 1"
+    assert [c["label"] for c in ctx.asked[0][1]] == ["Replay 1", "Replay 2", "Clear"]
+    ctx.choice = None
     assert ctx.posted == [("inject", KEY, "newer")]
-    assert "newer" not in run("resume pending") and "older" in run("resume pending")
-    assert "Usage" in run("resume replay 9")
+    assert "newer" not in run("lost") and "older" in run("lost")
+    assert run("lost 9") == "/helm lost <1-1> | clear"
 
 
 def test_replay_fallback_quotes_text(ctx, run, monkeypatch):
     turn(ctx, "t1", "line one\nline two")
     restart(monkeypatch)
     monkeypatch.setattr(ctx, "inject_message", lambda *a, **k: False)
-    out = run("resume replay 1")
+    out = run("lost 1")
     assert "> line one\n> line two" in out and "allow_gateway_injection" in out
-    assert "line one" in run("resume pending")  # still lost
+    assert "line one" in run("lost")  # still lost
 
 
 def test_clear_dismisses(ctx, run, monkeypatch):
     turn(ctx, "t1")
     restart(monkeypatch)
-    assert run("resume clear") == "Dismissed 1 lost turn(s)."
-    assert run("resume pending") == "No lost turns."
+    ctx.choice = "clear"
+    assert run("lost") == "Cleared 1."
+    ctx.choice = None
+    assert run("lost") == "No lost turns."
 
 
 def test_skips_subagents_and_empty_and_joins_parts(ctx, run, monkeypatch):
@@ -78,5 +83,5 @@ def test_shutdown_interrupt_is_lost_but_user_stop_is_not(ctx, run, monkeypatch):
     ctx.fire("agent_loop_stopped", session_key=KEY, platform="discord", reason="user_stop")
     ctx.fire("on_session_end", turn_id="t2", interrupted=True)
     restart(monkeypatch)
-    out = run("resume pending")
+    out = run("lost")
     assert "cut by shutdown" in out and "stopped by me" not in out

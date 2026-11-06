@@ -2,8 +2,8 @@ name: hermes-helm
 version: 0.1.0
 manifest_version: 2
 description: >-
-  Run Hermes from Discord: switch skills, MCP servers and toolsets on or off, see what each costs
-  in tokens, list and replay turns lost to a restart, and cap daily spend. Owner-only.
+  One /helm menu in Discord: switch MCP servers, skills and toolsets on or off by the tokens they
+  add, resend turns a restart killed, and cap daily spend. Owner-only.
 author: Phuc Nguyen
 license: MIT
 homepage: https://github.com/phucnht/hermes-helm
@@ -23,7 +23,7 @@ config_schema:
     description: Discord user IDs allowed to run /helm. Empty means nobody on chat platforms.
   modules:
     type: dict
-    default: {toggle: true, cost: true, resume: true, budget: true}
+    default: {toggle: true, resume: true, budget: true}
     description: Switch each module on or off.
   budget:
     type: dict

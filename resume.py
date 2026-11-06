@@ -61,29 +61,35 @@ def setup(ctx):
     core.hook(ctx, "resume", "on_session_end", on_session_end)
     core.hook(ctx, "resume", "agent_loop_stopped", agent_loop_stopped)
 
-    def pending(arg, source):
+    def replay(rows, n: int) -> str:
+        turn_id, _, key, _, text = rows[n - 1]
+        if key and ctx.inject_message(text, session_key=key):
+            core.execute("UPDATE turns SET status='replayed' WHERE turn_id=?", (turn_id,))
+            return f"Replayed {n}."
+        quoted = "\n".join("> " + line for line in text.splitlines())
+        return f"Could not resend {n} by itself. Paste it back:\n{quoted}"[:1700] + "\n" + HINT
+
+    def clear() -> str:
+        n = len(core.execute("UPDATE turns SET status='dismissed' WHERE status IN ('open','interrupted') AND boot!=?"
+                             " RETURNING 1", (BOOT,)))
+        return f"Cleared {n}."
+
+    def view(arg, source):
+        """No arg: lost turns, tap one to resend it. `<n>` resends turn n, `clear` dismisses all."""
         rows = _lost()
         if not rows:
             return "No lost turns."
-        lines = [f"{n}. {_age(ts)} [{plat or '?'}] {text[:80]}" for n, (_, ts, _, plat, text) in enumerate(rows, 1)]
-        return ("**Lost turns** (newest first)\n" + "\n".join(lines) +
-                "\n`/helm resume replay <n>` resends one (text only, attachments are not replayed); "
-                "`/helm resume clear` dismisses all.")
+        if arg == "clear":
+            return clear()
+        if arg:
+            return replay(rows, int(arg)) if arg.isdigit() and 1 <= int(arg) <= len(rows) else \
+                f"/helm lost <1-{len(rows)}> | clear"
+        head = "Lost turns, newest first\n" + "\n".join(
+            f"{n}. {_age(ts)}  {text[:70]}" for n, (_, ts, _, _, text) in enumerate(rows, 1))
+        picked = ctx.ask_choice(head, [{"value": str(n), "label": f"Replay {n}"} for n in range(1, len(rows) + 1)]
+                                + [{"value": "clear", "label": "Clear"}])
+        if picked is None:
+            return head
+        return clear() if picked == "clear" else replay(rows, int(picked))
 
-    def replay(arg, source):
-        rows = _lost()
-        if not arg.isdigit() or not 1 <= int(arg) <= len(rows):
-            return f"Usage: /helm resume replay <1-{len(rows)}>" if rows else "No lost turns."
-        turn_id, _, key, _, text = rows[int(arg) - 1]
-        if key and ctx.inject_message(text, session_key=key):
-            core.execute("UPDATE turns SET status='replayed' WHERE turn_id=?", (turn_id,))
-            return f"Replayed #{arg}."
-        quoted = "\n".join("> " + line for line in text.splitlines())
-        return (f"Could not replay #{arg} automatically. Resend it yourself:\n{quoted}"[:1700] + "\n" + HINT)
-
-    def clear(arg, source):
-        n = len(core.execute("UPDATE turns SET status='dismissed' WHERE status IN ('open','interrupted') AND boot!=? RETURNING 1",
-                             (BOOT,)))
-        return f"Dismissed {n} lost turn(s)."
-
-    return {"pending": pending, "replay": replay, "clear": clear}
+    return {"lost": view}

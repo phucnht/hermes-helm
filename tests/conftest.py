@@ -22,6 +22,7 @@ class FakeCtx:
         self.settings = settings or {}
         self.commands, self.hooks, self.posted, self.hints = {}, {}, [], {}
         self.choice = None  # what ask_choice returns
+        self.asked = []  # (question, choices) per ask_choice call
 
     def get_config(self, key, default=None):
         node = self.settings
@@ -42,7 +43,8 @@ class FakeCtx:
         return [fn(**kw) for fn in self.hooks.get(name, [])]
 
     def ask_choice(self, question, choices):
-        return self.choice
+        self.asked.append((question, choices))
+        return self.choice.pop(0) if isinstance(self.choice, list) else self.choice
 
     def post_message(self, text):
         self.posted.append(text)

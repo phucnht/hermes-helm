@@ -1,28 +1,14 @@
 # hermes-helm
 
-Run your Hermes Agent from Discord. You can switch skills, MCP servers and toolsets on or off, see how many tokens each one adds to every request, get back the turns a gateway restart killed, and stop the agent when it hits a daily spend limit.
+`/helm` in Discord opens a menu for the Hermes agent you run 24/7:
 
-Hermes can do most of this already, but only in the CLI, the desktop app or `config.yaml`. In Discord, `/tools`, `/toolsets`, `/skills` and `/plugins` are CLI-only. If your agent runs 24/7 on a server and you talk to it from your phone, you have to SSH in to change any of it. hermes-helm puts those controls in chat.
+- **MCP, Skills, Toolsets.** Everything installed, ranked by the tokens it adds to every request. Tap one to switch it on or off.
+- **Lost turns.** Messages a gateway restart or crash killed mid-reply. Tap one to send it again.
+- **Budget.** Today's spend and the last 7 days. Tap a daily limit; at the limit Hermes stops taking new turns.
 
-Only the bot owner can use it.
+Hermes can already change these, but only in the CLI, the desktop app or `config.yaml`. In Discord, `/tools`, `/toolsets`, `/skills` and `/plugins` are CLI-only, so changing anything from your phone means an SSH session.
 
-## Commands
-
-| Command | What it does |
-|---|---|
-| `/helm` | Lists the modules and whether each is on |
-| `/helm toggle list [mcp\|skill\|toolset]` | Lists every MCP server, skill and toolset with its on/off state |
-| `/helm toggle mcp <name> on\|off` | Turns an MCP server on or off. The gateway reconnects within about a minute, or run `/reload-mcp` |
-| `/helm toggle skill <name> on\|off` | Turns a skill on or off. Applies after `/reload-skills` or `/new` |
-| `/helm toggle toolset <name> on\|off` | Turns a toolset on or off. Applies from your next message |
-| `/helm cost [mcp\|skill\|toolset]` | Ranks what each item adds to every request, in tokens (same estimate rule as `/context all`) |
-| `/helm cost off` | Shows buttons for the most expensive items. Tap one to switch it off |
-| `/pending` | Lists turns that died mid-run because the gateway stopped or crashed |
-| `/helm resume replay <n>` | Sends a lost turn again |
-| `/helm resume clear` | Dismisses the lost-turn list |
-| `/budget` | Shows today's spend against your limit, the top models and the last 7 days |
-| `/budget set <usd>` / `/budget off` | Sets or removes the daily limit |
-| `/helm modules <module> on\|off` | Turns a whole module (`toggle`, `cost`, `resume`, `budget`) on or off |
+Only the owner can use it.
 
 ## Install
 
@@ -31,37 +17,49 @@ hermes plugins install phucnht/hermes-helm
 hermes plugins enable hermes-helm
 ```
 
-Add your Discord user ID to `config.yaml`, then restart the gateway:
+Add your Discord user ID (Developer Mode, right-click your name, Copy User ID), then restart the gateway:
 
 ```yaml
 plugins:
   entries:
     hermes-helm:
-      allow_gateway_injection: true   # optional: lets /helm resume replay resend a turn by itself
+      allow_gateway_injection: true   # lets Lost turns resend a message by itself
       settings:
         owner_ids: ["123456789012345678"]
-        budget: {daily_usd: 5, warn_pct: 80}
 ```
 
-In Discord, turn on Developer Mode, then right-click your name and choose Copy User ID. With `owner_ids` empty, nobody can use `/helm` from chat. The CLI and desktop app always can.
+## Typing instead of tapping
 
-## How each module works
+Every view also takes text, which is what the CLI and agents use:
 
-**toggle** writes the same `config.yaml` keys that `hermes mcp`, `hermes skills config` and `hermes tools` write: `mcp_servers.<name>.enabled`, `skills.disabled` and `agent.disabled_toolsets`. It refuses names that are not installed, and it never disables the essential `hermes-agent` skill.
+| | |
+|---|---|
+| `/helm mcp` · `skills` · `toolsets` | the ranked list |
+| `/helm mcp github off` | switch one; skills apply on `/reload-skills` or `/new`, MCP within a minute, toolsets on the next message |
+| `/helm lost` · `lost 2` · `lost clear` | list, resend, dismiss |
+| `/helm budget` · `budget 5` · `budget off` | spend, set or remove the daily limit |
+| `/helm modules budget off` | hide a whole section (`toggle`, `resume`, `budget`) |
 
-**cost** counts tokens from the tool schemas and skill index lines in your current install. A skill's full SKILL.md loads only when the agent uses it, so the table counts only its one-line entry in the system prompt.
+## How it counts
 
-**resume** saves the text of each turn when the turn starts and marks it done when the turn ends. If the gateway is killed, restarted or loses power in between, the turn stays open, and the next process lists it under `/pending`. Turns you stop yourself with `/stop` are not listed. Replay resends the text only, not attachments. Without `allow_gateway_injection`, replay shows the text so you can paste it back.
+**Tokens** follow Hermes' own rule for `/context`: a tool's schema or a skill's index line, bytes ÷ 4. A skill's full SKILL.md loads only when used, so it is not counted. An MCP server that is off shows no number, since it isn't connected.
 
-**budget** prices every model call (main and auxiliary) with your `budget.prices` table first, then Hermes' own price table. Hermes counts calls through a ChatGPT/Codex subscription as $0, so on a subscription add a rate there (for example `gpt-5.4: [2, 8]`, USD per 1M input and output tokens) if you want a cap. At `warn_pct` of the limit it posts one warning a day. At the limit it blocks new turns and stops tool calls in the turn that is running. The spend total is global and resets at local midnight.
+**Spend** prices every model call, main and auxiliary, with your `budget.prices` first and Hermes' price table second. Hermes prices a ChatGPT/Codex subscription at $0, so on a subscription add a rate if you want a limit:
+
+```yaml
+      settings:
+        budget: {daily_usd: 5, warn_pct: 80, prices: {gpt-5.4: [2, 8]}}   # USD per 1M input, output tokens
+```
+
+At `warn_pct` it posts one warning a day. At the limit it blocks new turns and stops tool calls in the running one. The total resets at local midnight.
+
+**Lost turns** are saved when a turn starts and closed when it ends. A turn still open when the gateway dies shows up after the restart. Turns you stop with `/stop` don't. Only text is resent, not attachments.
 
 ## What it writes and stores
 
-- **config.yaml:** only the keys listed under toggle, plus its own `plugins.entries.hermes-helm.settings`. Every change is logged with its old and new value in the plugin database.
-- **Local database:** `<HERMES_HOME>/plugin-data/hermes-helm/helm.db`. It holds the text of your messages for 7 days (for resume), token counts and cost per model call (for budget), and the config change log.
-- **Network:** none. It makes no network calls and sends nothing outside your Hermes install.
-
-If your config is managed by Nix, hermes-helm refuses to write it and tells you so.
+- **config.yaml:** `mcp_servers.<name>.enabled`, `skills.disabled`, `agent.disabled_toolsets` (the keys `hermes mcp`, `hermes skills config` and `hermes tools` write), and its own `plugins.entries.hermes-helm.settings`. Each change is logged with its old and new value. If Nix manages your config, it refuses to write.
+- **`<HERMES_HOME>/plugin-data/hermes-helm/helm.db`:** your message text for 7 days (for lost turns), tokens and cost per model call, and the change log.
+- **Network:** none.
 
 ## Develop
 
