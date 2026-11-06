@@ -9,7 +9,13 @@ license: MIT
 homepage: https://github.com/phucnht/hermes-helm
 tags: [discord, gateway, skills, mcp, cost, budget]
 provides_tools: []
-provides_hooks: []
+provides_hooks:
+  - pre_llm_call
+  - pre_tool_call
+  - on_session_end
+  - agent_loop_stopped
+  - post_api_request
+  - post_auxiliary_call
 config_schema:
   owner_ids:
     type: list
@@ -19,3 +25,10 @@ config_schema:
     type: dict
     default: {toggle: true, cost: true, resume: true, budget: true}
     description: Switch each module on or off.
+  budget:
+    type: dict
+    default: {daily_usd: 0, warn_pct: 80, prices: {}}
+    description: >-
+      daily_usd is the daily spend limit (0 = none); warn_pct posts a warning once a day at that
+      share of the limit; prices maps model to [usd per 1M input, usd per 1M output] for models
+      Hermes cannot price.

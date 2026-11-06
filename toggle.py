@@ -58,7 +58,7 @@ def apply(kind: str, name: str, on: bool) -> str:
     if name not in known:
         return _clip(f"Unknown {kind} `{name}`. Known: {', '.join(sorted(known)) or 'none'}")
     if kind == "mcp":
-        err = core.set_config(f"mcp_servers.{name}.enabled", on)
+        err = core.set_config(("mcp_servers", name, "enabled"), on)
     else:
         if kind == "skill" and not on and name in _essential():
             return f"`{name}` is an essential skill and cannot be disabled."

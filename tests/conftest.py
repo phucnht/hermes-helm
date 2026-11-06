@@ -63,11 +63,12 @@ def ctx(monkeypatch):
     config: dict = {}
 
     def set_config(path, value):
+        keys = list(path) if isinstance(path, tuple) else path.split(".")
         node = config
-        for k in path.split(".")[:-1]:
+        for k in keys[:-1]:
             node = node.setdefault(k, {})
-        node[path.split(".")[-1]] = value
-        core.execute("INSERT INTO audit VALUES (0,?,?,?)", (path, "", str(value)))
+        node[keys[-1]] = value
+        core.execute("INSERT INTO audit VALUES (0,?,?,?)", (".".join(keys), "", str(value)))
 
     monkeypatch.setattr(core, "set_config", set_config)
     monkeypatch.setattr(core, "read_config", lambda: config)

@@ -6,7 +6,9 @@ from uuid import uuid4
 from . import core
 
 BOOT = uuid4().hex  # this process; an 'open' row from another boot died mid-turn
-LOST = "FROM turns WHERE status='open' AND boot!=? ORDER BY ts DESC LIMIT 10"
+# 'interrupted' counts too: a graceful gateway shutdown interrupts the turn before the process exits.
+# A user /stop is marked 'stopped' by agent_loop_stopped first, so it never shows here.
+LOST = "FROM turns WHERE status IN ('open','interrupted') AND boot!=? ORDER BY ts DESC LIMIT 10"
 HINT = ("Auto-replay needs `plugins.entries.hermes-helm.allow_gateway_injection: true` in config.yaml "
         "(entry level, not under settings).")
 
@@ -50,10 +52,14 @@ def setup(ctx):
 
     def on_session_end(turn_id="", completed=False, failed=False, interrupted=False, **kw):
         status = "interrupted" if interrupted else "failed" if failed else "done"
-        core.execute("UPDATE turns SET status=? WHERE turn_id=?", (status, turn_id))
+        core.execute("UPDATE turns SET status=? WHERE turn_id=? AND status='open'", (status, turn_id))
+
+    def agent_loop_stopped(session_key="", **kw):
+        core.execute("UPDATE turns SET status='stopped' WHERE session_key=? AND status='open'", (session_key,))
 
     core.hook(ctx, "resume", "pre_llm_call", pre_llm_call)
     core.hook(ctx, "resume", "on_session_end", on_session_end)
+    core.hook(ctx, "resume", "agent_loop_stopped", agent_loop_stopped)
 
     def pending(arg, source):
         rows = _lost()
@@ -76,7 +82,7 @@ def setup(ctx):
         return (f"Could not replay #{arg} automatically. Resend it yourself:\n{quoted}"[:1700] + "\n" + HINT)
 
     def clear(arg, source):
-        n = len(core.execute("UPDATE turns SET status='dismissed' WHERE status='open' AND boot!=? RETURNING 1",
+        n = len(core.execute("UPDATE turns SET status='dismissed' WHERE status IN ('open','interrupted') AND boot!=? RETURNING 1",
                              (BOOT,)))
         return f"Dismissed {n} lost turn(s)."
 

@@ -78,13 +78,15 @@ def read_config() -> dict:
     return load_config_readonly() or {}
 
 
-def set_config(path: str, value: Any) -> str | None:
-    """The only writer of config.yaml. Returns an error string, or None on success."""
+def set_config(path: str | tuple, value: Any) -> str | None:
+    """The only writer of config.yaml. ``path`` is dotted, or a tuple when a key may contain a dot
+    (an MCP server name). Returns an error string, or None on success."""
     from hermes_cli import config as hc
     if hc.is_managed():
         return "config.yaml is managed by your package manager; change it there."
     cfg = hc.load_config()
-    keys = path.split(".")
+    keys = list(path) if isinstance(path, tuple) else path.split(".")
+    path = ".".join(keys)
     node = cfg
     for key in keys[:-1]:
         child = node.get(key)

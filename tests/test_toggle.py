@@ -58,3 +58,10 @@ def test_apply_reports_config_error(run, monkeypatch):
     monkeypatch.setattr(core, "set_config", lambda path, value: "config.yaml is managed")
     assert toggle.apply("toolset", "browser", False) == "config.yaml is managed"
     assert "Unknown kind" in toggle.apply("tool", "browser", False)
+
+
+def test_mcp_name_with_dot(ctx):
+    ctx.config["mcp_servers"] = {"my.server": {}}
+    helm.register(ctx)
+    ctx.commands["helm"]("toggle mcp my.server off", source=OWNER, platform="discord")
+    assert ctx.config["mcp_servers"]["my.server"]["enabled"] is False

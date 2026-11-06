@@ -69,3 +69,14 @@ def test_prunes_old_rows(ctx, run):
     core.execute("INSERT INTO turns VALUES ('old','b',0,'s','k','discord','x','open')")
     turn(ctx, "t1")
     assert [r[0] for r in core.execute("SELECT turn_id FROM turns")] == ["t1"]
+
+
+def test_shutdown_interrupt_is_lost_but_user_stop_is_not(ctx, run, monkeypatch):
+    turn(ctx, "t1", "cut by shutdown")
+    ctx.fire("on_session_end", turn_id="t1", interrupted=True)
+    turn(ctx, "t2", "stopped by me")
+    ctx.fire("agent_loop_stopped", session_key=KEY, platform="discord", reason="user_stop")
+    ctx.fire("on_session_end", turn_id="t2", interrupted=True)
+    restart(monkeypatch)
+    out = run("resume pending")
+    assert "cut by shutdown" in out and "stopped by me" not in out
