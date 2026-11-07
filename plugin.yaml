@@ -16,6 +16,7 @@ provides_hooks:
   - agent_loop_stopped
   - post_api_request
   - post_auxiliary_call
+  - transform_llm_output
 config_schema:
   owner_ids:
     type: list

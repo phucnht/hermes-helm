@@ -9,6 +9,7 @@ KEY = "agent:main:discord:dm:1"
 def run(ctx, monkeypatch):
     helm.register(ctx)
     monkeypatch.setattr(helm.resume, "_session_key", lambda: KEY)
+    monkeypatch.setattr(helm.resume, "_unhold", lambda key: True)
     return lambda args: ctx.commands["helm"](args, source=OWNER, platform="discord")
 
 
@@ -85,3 +86,35 @@ def test_shutdown_interrupt_is_lost_but_user_stop_is_not(ctx, run, monkeypatch):
     restart(monkeypatch)
     out = run("lost")
     assert "cut by shutdown" in out and "stopped by me" not in out
+
+
+def test_long_discord_reply_comes_as_a_file(ctx, run, monkeypatch, tmp_path):
+    monkeypatch.setattr(helm.resume, "_cache_dir", lambda: tmp_path)
+    long = "\n".join(f"line {i} " + "x" * 90 for i in range(200))  # ~20k chars, past 8 Discord messages
+    out = ctx.fire("transform_llm_output", response_text=long, platform="discord", turn_id="a:b/c")[0]
+    head, path = out.split("\nMEDIA:")
+    assert len(head) < 10_100 and head.endswith("…full reply attached.") and long.startswith(head.split("\n\n…")[0])
+    assert path.endswith("helm-reply-a_b_c.txt") and open(path, encoding="utf-8").read() == long
+    assert ctx.fire("transform_llm_output", response_text=long, platform="telegram", turn_id="t")[0] is None
+    assert ctx.fire("transform_llm_output", response_text="short", platform="discord", turn_id="t")[0] is None
+
+
+def test_replay_asks_for_discard_when_the_hold_stays(ctx, run, monkeypatch):
+    turn(ctx, "t1", "lost one")
+    restart(monkeypatch)
+    monkeypatch.setattr(helm.resume, "_unhold", lambda key: False)
+    assert run("lost 1") == "Replayed 1. Send /discard to let it run."
+
+
+def test_unhold_outside_a_gateway_is_false():
+    assert helm.resume._unhold(KEY) is False  # no live gateway published in tests
+
+
+def test_stored_text_drops_the_shared_session_prefix(ctx, run, monkeypatch):
+    monkeypatch.setattr(helm.resume, "_session_key", lambda: "agent:main:discord:thread:1:1")
+    turn(ctx, "t1", "earlier chat\n\n[New message]\n[phuc] write the report")
+    turn(ctx, "t2", "[phuc] [draft] title")
+    assert [r[0] for r in core.execute("SELECT text FROM turns ORDER BY ts")] == ["write the report", "[draft] title"]
+    monkeypatch.setattr(helm.resume, "_session_key", lambda: KEY)  # DM: no prefix to drop
+    turn(ctx, "t3", "[draft] title")
+    assert core.execute("SELECT text FROM turns WHERE turn_id='t3'") == [("[draft] title",)]

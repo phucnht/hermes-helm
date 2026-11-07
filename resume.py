@@ -1,6 +1,10 @@
-"""resume module: remember each user turn; list and replay the ones a restart killed mid-turn."""
+"""resume module: remember each user turn; list and replay the ones a restart killed mid-turn.
+A Discord reply too long to deliver comes as a file instead of being cut."""
 
+import asyncio
+import re
 import time
+from pathlib import Path
 from uuid import uuid4
 
 from . import core
@@ -24,12 +28,75 @@ def _text(msg) -> str:
     return (msg or "").strip() if isinstance(msg, str) else ""
 
 
+def _own_words(text: str, session_key: str) -> str:
+    """What the user typed. In a shared session Hermes adds `[name] ` (and any channel backfill) before it
+    reaches the agent, and adds them again to a replay (gateway/run_inbound.py _prefix_inbound_sender_context)."""
+    if ":dm:" in (session_key or ""):  # a DM gets no prefix, so a leading `[x] ` is the user's own
+        return text
+    text = text.rpartition("\n\n[New message]\n")[2]
+    return re.sub(r"^\[[^\]\n]+\] ", "", text, count=1)
+
+
 def _age(ts: float) -> str:
     s = int(time.time() - ts)
     for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
         if s >= n:
             return f"{s // n}{unit} ago"
     return f"{s}s ago"
+
+
+DISCORD_PAGES = 8  # ponytail: mirrors DiscordAdapter.MAX_SPLIT_MESSAGES (hardcoded upstream); read it if it becomes config
+HEAD = 10_000  # chars kept inline; with the note it stays well under the cap
+
+
+def _pages(text: str) -> int:
+    from gateway.platforms.base import BasePlatformAdapter
+    return len(BasePlatformAdapter.truncate_message(text, 2000))
+
+
+def _cache_dir() -> Path:
+    from gateway.platforms.base import DOCUMENT_CACHE_DIR  # a root Hermes always lets MEDIA: deliver from
+    return Path(DOCUMENT_CACHE_DIR)
+
+
+def long_reply(response_text="", platform="", turn_id="", **kw):
+    """Discord drops whatever doesn't fit in 8 messages: send the start, and the whole reply as a file."""
+    if platform != "discord" or not isinstance(response_text, str) or _pages(response_text) <= DISCORD_PAGES:
+        return None
+    path = _cache_dir() / f"helm-reply-{re.sub(r'[^\w-]', '_', turn_id)[-40:] or uuid4().hex}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(response_text, encoding="utf-8")
+    head = response_text[:HEAD].rsplit("\n", 1)[0]
+    return f"{head}\n\n…full reply attached.\nMEDIA:{path}"
+
+
+def _unhold(session_key: str) -> bool:
+    """Hermes holds a chat whose turn died in a restart until its owner sends /discard, so a replay would
+    queue behind it. Do what /discard does. False when that can't be done here.
+    ponytail: private gateway internals (no plugin API for this); any change lands in False and a /discard hint."""
+    try:
+        from hermes_cli import plugins
+        from gateway.session_authorities import active_authority
+        from gateway.slash_commands_session import discard_lost_turns
+        runner = plugins._published_gateway_message_injector[0]
+        authority = active_authority(runner)
+        if authority is None:  # no session FIFO, nothing holds the chat
+            return True
+        sid = authority.logical_owner(runner.session_store.peek_session_id(session_key))
+        if not sid or sid not in authority.sessions:
+            return False
+        loop, coro = runner._gateway_loop, discard_lost_turns(authority, sid)
+        try:
+            on_loop = asyncio.get_running_loop() is loop
+        except RuntimeError:
+            on_loop = False
+        if on_loop:
+            loop.create_task(coro)
+        else:
+            asyncio.run_coroutine_threadsafe(coro, loop).result(15)
+        return True
+    except Exception:
+        return False
 
 
 def _lost() -> list[tuple]:
@@ -41,13 +108,14 @@ def setup(ctx):
                  " session_key TEXT, platform TEXT, text TEXT, status TEXT)")
 
     def pre_llm_call(user_message=None, parent_session_id="", turn_id="", session_id="", platform="", **kw):
-        text = _text(user_message)
+        key = _session_key()
+        text = _own_words(_text(user_message), key)
         if not text or parent_session_id:
             return None
         now = time.time()
         core.execute("DELETE FROM turns WHERE ts<?", (now - 7 * 86400,))
         core.execute("INSERT OR REPLACE INTO turns VALUES (?,?,?,?,?,?,?, 'open')",
-                     (turn_id or uuid4().hex, BOOT, now, session_id, _session_key(), platform, text))
+                     (turn_id or uuid4().hex, BOOT, now, session_id, key, platform, text))
         return None
 
     def on_session_end(turn_id="", completed=False, failed=False, interrupted=False, **kw):
@@ -60,12 +128,13 @@ def setup(ctx):
     core.hook(ctx, "resume", "pre_llm_call", pre_llm_call)
     core.hook(ctx, "resume", "on_session_end", on_session_end)
     core.hook(ctx, "resume", "agent_loop_stopped", agent_loop_stopped)
+    core.hook(ctx, "resume", "transform_llm_output", long_reply)
 
     def replay(rows, n: int) -> str:
         turn_id, _, key, _, text = rows[n - 1]
         if key and ctx.inject_message(text, session_key=key):
             core.execute("UPDATE turns SET status='replayed' WHERE turn_id=?", (turn_id,))
-            return f"Replayed {n}."
+            return f"Replayed {n}." if _unhold(key) else f"Replayed {n}. Send /discard to let it run."
         quoted = "\n".join("> " + line for line in text.splitlines())
         return f"Could not resend {n} by itself. Paste it back:\n{quoted}"[:1700] + "\n" + HINT
 

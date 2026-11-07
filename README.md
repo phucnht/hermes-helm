@@ -4,6 +4,7 @@
 
 - **MCP, Skills, Toolsets.** Everything installed, ranked by the tokens it adds to every request. Tap items to switch them, or All on / All off, then Done. Skills open by category.
 - **Lost turns.** Messages a gateway restart or crash killed mid-reply. Tap one to send it again.
+- **Long replies.** Discord delivers 8 messages per reply and drops the rest. A longer reply comes as its start plus the whole text as a `.txt` file.
 - **Budget.** Today's spend and the last 7 days. Tap a daily limit; at the limit Hermes stops taking new turns.
 
 Hermes can already change these, but only in the CLI, the desktop app or `config.yaml`. In Discord, `/tools`, `/toolsets`, `/skills` and `/plugins` are CLI-only, so changing anything from your phone means an SSH session.
@@ -53,12 +54,15 @@ Every view also takes text, which is what the CLI and agents use:
 
 At `warn_pct` it posts one warning a day. At the limit it blocks new turns and stops tool calls in the running one. The total resets at local midnight.
 
-**Lost turns** are saved when a turn starts and closed when it ends. A turn still open when the gateway dies shows up after the restart. Turns you stop with `/stop` don't. Only text is resent, not attachments.
+**Lost turns** are saved when a turn starts and closed when it ends. A turn still open when the gateway dies shows up after the restart. Turns you stop with `/stop` don't. Hermes holds a chat that lost a turn until you send `/discard`; Replay does that for you. Only text is resent, not attachments.
+
+**Long replies** are measured the way Discord splits them. The session keeps the shortened text, so on the next turn the agent sees the start and the file path, not the whole reply.
 
 ## What it writes and stores
 
 - **config.yaml:** `mcp_servers.<name>.enabled`, `skills.disabled`, `agent.disabled_toolsets` (the keys `hermes mcp`, `hermes skills config` and `hermes tools` write), and its own `plugins.entries.hermes-helm.settings`. Each change is logged with its old and new value. If Nix manages your config, it refuses to write.
 - **`<HERMES_HOME>/plugin-data/hermes-helm/helm.db`:** your message text for 7 days (for lost turns), tokens and cost per model call, and the change log.
+- **`<HERMES_HOME>/cache/documents/helm-reply-*.txt`** (Hermes' document cache): the full text of each Discord reply too long to deliver.
 - **Network:** none.
 
 ## Develop
