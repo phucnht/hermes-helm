@@ -25,6 +25,12 @@ def user_id(source: Any) -> str:
     return str(value or "")
 
 
+def shared(source: Any) -> bool:
+    """A chat others can see. Hermes lets anyone on the bot's allowlist answer a button card there."""
+    value = source.get("chat_type") if isinstance(source, dict) else getattr(source, "chat_type", None)
+    return (value or "dm") != "dm"
+
+
 def is_owner(ctx, source: Any, platform: str | None) -> bool:
     """Local surfaces are the owner by definition; on a messaging platform the caller must be in
     ``owner_ids``. Unknown caller or empty list fails closed."""

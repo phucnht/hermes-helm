@@ -2,12 +2,12 @@ name: hermes-helm
 version: 0.1.0
 manifest_version: 2
 description: >-
-  One /helm menu in Discord: switch MCP servers, skills and toolsets on or off by the tokens they
+  One /helm menu in Discord or Telegram: switch MCP servers, skills and toolsets on or off by the tokens they
   add, resend turns a restart killed, and cap daily spend. Owner-only.
 author: Phuc Nguyen
 license: MIT
 homepage: https://github.com/phucnht/hermes-helm
-tags: [discord, gateway, skills, mcp, cost, budget]
+tags: [discord, telegram, gateway, skills, mcp, cost, budget]
 provides_tools: []
 provides_hooks:
   - pre_llm_call
@@ -21,7 +21,7 @@ config_schema:
   owner_ids:
     type: list
     default: []
-    description: Discord user IDs allowed to run /helm. Empty means nobody on chat platforms.
+    description: Chat user IDs (Discord or Telegram) allowed to run /helm. Empty means nobody on chat platforms.
   modules:
     type: dict
     default: {toggle: true, resume: true, budget: true}

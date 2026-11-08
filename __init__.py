@@ -48,6 +48,8 @@ def register(ctx):
             return "Only the owner can use /helm."
         name, _, arg = (raw_args or "").strip().partition(" ")
         name, arg = name.lower(), arg.strip()
+        if not arg and name != "modules" and core.shared(source):  # a bare view opens buttons or lists other chats
+            return "Open /helm in a DM with the bot. Others here could tap its buttons."
         if name == "modules":
             return _modules_cmd(arg)
         if name in views:

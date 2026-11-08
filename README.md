@@ -1,15 +1,15 @@
 # hermes-helm
 
-`/helm` in Discord opens a menu for the Hermes agent you run 24/7:
+`/helm` in Discord or Telegram opens a menu for the Hermes agent you run 24/7:
 
 - **MCP, Skills, Toolsets.** Everything installed, ranked by the tokens it adds to every request. Tap items to switch them, or All on / All off, then Done. Skills open by category.
 - **Lost turns.** Messages a gateway restart or crash killed mid-reply. Tap one to send it again.
 - **Long replies.** Discord delivers 8 messages per reply and drops the rest. A longer reply comes as its start plus the whole text as a `.txt` file.
 - **Budget.** Today's spend and the last 7 days. Tap a daily limit; at the limit Hermes stops taking new turns.
 
-Hermes can already change these, but only in the CLI, the desktop app or `config.yaml`. In Discord, `/tools`, `/toolsets`, `/skills` and `/plugins` are CLI-only, so changing anything from your phone means an SSH session.
+Hermes can already change these, but only in the CLI, the desktop app or `config.yaml`. In chat, `/tools`, `/toolsets`, `/skills` and `/plugins` are CLI-only, so changing anything from your phone means an SSH session.
 
-Only the owner can use it.
+Only the owner can use it. Menus open only in a DM with the bot, since in a shared channel anyone on the bot's allowlist could tap them. Typed commands work anywhere.
 
 ## Install
 
@@ -18,7 +18,7 @@ hermes plugins install phucnht/hermes-helm
 hermes plugins enable hermes-helm
 ```
 
-Add your Discord user ID (Developer Mode, right-click your name, Copy User ID), then restart the gateway:
+Add your user ID, the same one you put in `DISCORD_ALLOWED_USERS` or `TELEGRAM_ALLOWED_USERS`, then restart the gateway:
 
 ```yaml
 plugins:
@@ -27,6 +27,16 @@ plugins:
       allow_gateway_injection: true   # lets Lost turns resend a message by itself
       settings:
         owner_ids: ["123456789012345678"]
+```
+
+Telegram shows 60 commands in its menu and Hermes has more, so `/helm` may not be listed. Typing it works; to list it first:
+
+```yaml
+platforms:
+  telegram:
+    extra:
+      command_menu:
+        priority: [helm]
 ```
 
 ## Typing instead of tapping

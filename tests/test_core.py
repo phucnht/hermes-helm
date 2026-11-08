@@ -19,6 +19,15 @@ def test_owner_gate_fails_closed(ctx):
     assert "Only the owner" in run("", source=OWNER, platform="discord")
 
 
+def test_shared_chat_sends_menus_to_a_dm(ctx):
+    run = boot(ctx)  # anyone on the bot's allowlist can tap a card in a shared chat
+    group = {**OWNER, "chat_type": "thread"}
+    assert run("", source=group, platform="discord").startswith("Open /helm in a DM")
+    assert run("lost", source=group, platform="discord").startswith("Open /helm in a DM")
+    assert run("budget 5", source=group, platform="discord") == "Daily limit $5."  # typed: owner checked per message
+    assert not ctx.asked
+
+
 def test_local_cli_is_owner(ctx):
     assert boot(ctx)("", source=None, platform="cli") == helm.USAGE  # owner; nothing to tap, so text
 
