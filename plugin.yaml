@@ -1,6 +1,7 @@
 name: hermes-helm
 version: 0.1.0
 manifest_version: 2
+requires_hermes: ">=0.23.0"
 description: >-
   One /helm menu in Discord or Telegram: switch MCP servers, skills and toolsets on or off by the tokens they
   add, resend turns a restart killed, and cap daily spend. Owner-only.
