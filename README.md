@@ -7,6 +7,8 @@
 - **Long replies.** Discord delivers 8 messages per reply and drops the rest. A longer reply comes as its start plus the whole text as a `.txt` file.
 - **Budget.** Today's spend and the last 7 days. Tap a daily limit; at the limit Hermes stops taking new turns.
 
+![The /helm menu in Discord](docs/discord-menu.png)
+
 Hermes can already change these, but only in the CLI, the desktop app or `config.yaml`. In chat, `/tools`, `/toolsets`, `/skills` and `/plugins` are CLI-only, so changing anything from your phone means an SSH session.
 
 Only the owner can use it. Menus open only in a DM with the bot, since in a shared channel anyone on the bot's allowlist could tap them. Typed commands work anywhere.
