@@ -110,6 +110,32 @@ def test_unhold_outside_a_gateway_is_false():
     assert helm.resume._unhold(KEY) is False  # no live gateway published in tests
 
 
+def test_unhold_retries_until_the_lost_turn_is_marked(monkeypatch):
+    import asyncio, threading, types
+    from hermes_cli import plugins
+    from gateway import session_authorities, slash_commands_session
+    from agent import i18n
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=loop.run_forever, daemon=True).start()
+    calls = []
+
+    async def discard(authority, sid):  # the pause lands only after the replay is admitted
+        calls.append(sid)
+        return "nothing" if len(calls) < 3 else "discarded"
+
+    authority = types.SimpleNamespace(sessions={"s1": 1}, logical_owner=lambda sid: sid)
+    runner = types.SimpleNamespace(_gateway_loop=loop, session_store=types.SimpleNamespace(peek_session_id=lambda k: "s1"))
+    monkeypatch.setattr(plugins, "_published_gateway_message_injector", [runner], raising=False)
+    monkeypatch.setattr(session_authorities, "active_authority", lambda r: authority)
+    monkeypatch.setattr(slash_commands_session, "discard_lost_turns", discard)
+    monkeypatch.setattr(i18n, "t", lambda key, **kw: "nothing")
+    monkeypatch.setattr(helm.resume.time, "sleep", lambda s: None)
+    try:
+        assert helm.resume._unhold(KEY) is True and len(calls) == 3
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+
+
 def test_stored_text_drops_the_shared_session_prefix(ctx, run, monkeypatch):
     monkeypatch.setattr(helm.resume, "_session_key", lambda: "agent:main:discord:thread:1:1")
     turn(ctx, "t1", "earlier chat\n\n[New message]\n[phuc] write the report")

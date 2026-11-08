@@ -82,19 +82,26 @@ def _unhold(session_key: str) -> bool:
         authority = active_authority(runner)
         if authority is None:  # no session FIFO, nothing holds the chat
             return True
+        from agent.i18n import t
+        nothing = t("gateway.discard.nothing")
         sid = authority.logical_owner(runner.session_store.peek_session_id(session_key))
-        if not sid or sid not in authority.sessions:
+        if not sid:
             return False
-        loop, coro = runner._gateway_loop, discard_lost_turns(authority, sid)
+        loop = runner._gateway_loop
         try:
-            on_loop = asyncio.get_running_loop() is loop
+            if asyncio.get_running_loop() is loop:  # can't wait here; one try
+                loop.create_task(discard_lost_turns(authority, sid))
+                return True
         except RuntimeError:
-            on_loop = False
-        if on_loop:
-            loop.create_task(coro)
-        else:
-            asyncio.run_coroutine_threadsafe(coro, loop).result(15)
-        return True
+            pass
+        # The replay's own admission is what makes Hermes mark the dead turn lost and pause the chat,
+        # a few ms after inject_message returns, so a single /discard can run too early. Retry briefly.
+        for _ in range(8):
+            if sid in authority.sessions and asyncio.run_coroutine_threadsafe(
+                    discard_lost_turns(authority, sid), loop).result(15) != nothing:
+                return True
+            time.sleep(0.4)
+        return sid in authority.sessions
     except Exception:
         return False
 
