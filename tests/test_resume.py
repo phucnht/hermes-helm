@@ -9,7 +9,6 @@ KEY = "agent:main:discord:dm:1"
 def run(ctx, monkeypatch):
     helm.register(ctx)
     monkeypatch.setattr(helm.resume, "_session_key", lambda: KEY)
-    monkeypatch.setattr(helm.resume, "_unhold", lambda key: True)
     return lambda args: ctx.commands["helm"](args, source=OWNER, platform="discord")
 
 
@@ -37,7 +36,7 @@ def test_replay_injects_and_marks(ctx, run, monkeypatch):
     turn(ctx, "t2", "newer")
     restart(monkeypatch)
     ctx.choice = "1"
-    assert run("lost") == "Replayed 1."  # newest first; tapped "Replay 1"
+    assert run("lost") == "Replayed 1. Send /discard to let it run."  # newest first; tapped "Replay 1"
     assert [c["label"] for c in ctx.asked[0][1]] == ["Replay 1", "Replay 2", "Clear", "Cancel"]
     ctx.choice = None
     assert ctx.posted == [("inject", KEY, "newer")]
@@ -97,43 +96,6 @@ def test_long_discord_reply_comes_as_a_file(ctx, run, monkeypatch, tmp_path):
     assert path.endswith("helm-reply-a_b_c.txt") and open(path, encoding="utf-8").read() == long
     assert ctx.fire("transform_llm_output", response_text=long, platform="telegram", turn_id="t")[0] is None
     assert ctx.fire("transform_llm_output", response_text="short", platform="discord", turn_id="t")[0] is None
-
-
-def test_replay_asks_for_discard_when_the_hold_stays(ctx, run, monkeypatch):
-    turn(ctx, "t1", "lost one")
-    restart(monkeypatch)
-    monkeypatch.setattr(helm.resume, "_unhold", lambda key: False)
-    assert run("lost 1") == "Replayed 1. Send /discard to let it run."
-
-
-def test_unhold_outside_a_gateway_is_false():
-    assert helm.resume._unhold(KEY) is False  # no live gateway published in tests
-
-
-def test_unhold_retries_until_the_lost_turn_is_marked(monkeypatch):
-    import asyncio, threading, types
-    from hermes_cli import plugins
-    from gateway import session_authorities, slash_commands_session
-    from agent import i18n
-    loop = asyncio.new_event_loop()
-    threading.Thread(target=loop.run_forever, daemon=True).start()
-    calls = []
-
-    async def discard(authority, sid):  # the pause lands only after the replay is admitted
-        calls.append(sid)
-        return "nothing" if len(calls) < 3 else "discarded"
-
-    authority = types.SimpleNamespace(sessions={"s1": 1}, logical_owner=lambda sid: sid)
-    runner = types.SimpleNamespace(_gateway_loop=loop, session_store=types.SimpleNamespace(peek_session_id=lambda k: "s1"))
-    monkeypatch.setattr(plugins, "_published_gateway_message_injector", [runner], raising=False)
-    monkeypatch.setattr(session_authorities, "active_authority", lambda r: authority)
-    monkeypatch.setattr(slash_commands_session, "discard_lost_turns", discard)
-    monkeypatch.setattr(i18n, "t", lambda key, **kw: "nothing")
-    monkeypatch.setattr(helm.resume.time, "sleep", lambda s: None)
-    try:
-        assert helm.resume._unhold(KEY) is True and len(calls) == 3
-    finally:
-        loop.call_soon_threadsafe(loop.stop)
 
 
 def test_stored_text_drops_the_shared_session_prefix(ctx, run, monkeypatch):

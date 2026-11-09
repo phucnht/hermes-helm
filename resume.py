@@ -1,7 +1,6 @@
 """resume module: remember each user turn; list and replay the ones a restart killed mid-turn.
 A Discord reply too long to deliver comes as a file instead of being cut."""
 
-import asyncio
 import re
 import time
 from pathlib import Path
@@ -70,42 +69,6 @@ def long_reply(response_text="", platform="", turn_id="", **kw):
     return f"{head}\n\n…full reply attached.\nMEDIA:{path}"
 
 
-def _unhold(session_key: str) -> bool:
-    """Hermes holds a chat whose turn died in a restart until its owner sends /discard, so a replay would
-    queue behind it. Do what /discard does. False when that can't be done here.
-    ponytail: private gateway internals (no plugin API for this); any change lands in False and a /discard hint."""
-    try:
-        from hermes_cli import plugins
-        from gateway.session_authorities import active_authority
-        from gateway.slash_commands_session import discard_lost_turns
-        runner = plugins._published_gateway_message_injector[0]
-        authority = active_authority(runner)
-        if authority is None:  # no session FIFO, nothing holds the chat
-            return True
-        from agent.i18n import t
-        nothing = t("gateway.discard.nothing")
-        sid = authority.logical_owner(runner.session_store.peek_session_id(session_key))
-        if not sid:
-            return False
-        loop = runner._gateway_loop
-        try:
-            if asyncio.get_running_loop() is loop:  # can't wait here; one try
-                loop.create_task(discard_lost_turns(authority, sid))
-                return True
-        except RuntimeError:
-            pass
-        # The replay's own admission is what makes Hermes mark the dead turn lost and pause the chat,
-        # a few ms after inject_message returns, so a single /discard can run too early. Retry briefly.
-        for _ in range(8):
-            if sid in authority.sessions and asyncio.run_coroutine_threadsafe(
-                    discard_lost_turns(authority, sid), loop).result(15) != nothing:
-                return True
-            time.sleep(0.4)
-        return sid in authority.sessions
-    except Exception:
-        return False
-
-
 def _lost() -> list[tuple]:
     return core.execute("SELECT turn_id, ts, session_key, platform, text " + LOST, (BOOT,))
 
@@ -141,7 +104,7 @@ def setup(ctx):
         turn_id, _, key, _, text = rows[n - 1]
         if key and ctx.inject_message(text, session_key=key):
             core.execute("UPDATE turns SET status='replayed' WHERE turn_id=?", (turn_id,))
-            return f"Replayed {n}." if _unhold(key) else f"Replayed {n}. Send /discard to let it run."
+            return f"Replayed {n}. Send /discard to let it run."  # Hermes holds a chat that lost a turn until /discard
         quoted = "\n".join("> " + line for line in text.splitlines())
         return f"Could not resend {n} by itself. Paste it back:\n{quoted}"[:1700] + "\n" + HINT
 
